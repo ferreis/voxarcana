@@ -37,7 +37,8 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
       target: "offscreen",
       type: "speak",
       text: info.selectionText,
-      voice: "narrator-epic",
+      voice: "narrator-br",
+      style: "epic",
     });
   } catch (error) {
     console.error("VoxArcana:", error);

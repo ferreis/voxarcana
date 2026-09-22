@@ -5,7 +5,6 @@ from io import BytesIO
 import soundfile as sf
 
 from .config import get_settings
-from .voices import VoiceProfile
 
 
 def _resolve_runtime(device_name: str, dtype_name: str):
@@ -40,8 +39,6 @@ class QwenVoiceDesignEngine:
         if self._model is not None:
             return self._model
 
-        # O modelo padrão do VoxArcana é público. Evita que um token
-        # Hugging Face inválido salvo no ambiente quebre downloads públicos.
         os.environ.setdefault("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1")
 
         from qwen_tts import Qwen3TTSModel
@@ -59,19 +56,13 @@ class QwenVoiceDesignEngine:
         self._model = Qwen3TTSModel.from_pretrained(settings.model, **kwargs)
         return self._model
 
-    def synthesize(
-        self,
-        text: str,
-        profile: VoiceProfile,
-        instruction: str | None = None,
-    ) -> bytes:
+    def synthesize(self, text: str, instruction: str) -> bytes:
         model = self._load()
-        prompt = instruction.strip() if instruction and instruction.strip() else profile.instruction
 
         wavs, sample_rate = model.generate_voice_design(
             text=text,
             language="Portuguese",
-            instruct=prompt,
+            instruct=instruction,
         )
 
         output = BytesIO()

@@ -17,10 +17,10 @@ chrome.runtime.onMessage.addListener((message) => {
     return;
   }
 
-  void speak(message.text, message.voice);
+  void speak(message.text, message.voice, message.style);
 });
 
-async function speak(text, voice) {
+async function speak(text, voice, style) {
   try {
     releaseCurrentAudio();
 
@@ -32,11 +32,13 @@ async function speak(text, voice) {
       body: JSON.stringify({
         text,
         voice,
+        style,
       }),
     });
 
     if (!response.ok) {
-      throw new Error(`VoxArcana API returned ${response.status}`);
+      const detail = await response.text();
+      throw new Error(`VoxArcana API returned ${response.status}: ${detail}`);
     }
 
     const audioBlob = await response.blob();

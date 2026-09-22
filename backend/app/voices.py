@@ -1,6 +1,14 @@
 from dataclasses import dataclass
 
 
+BRAZILIAN_PORTUGUESE_RULES = (
+    "Speak exclusively in natural Brazilian Portuguese with a neutral contemporary Brazilian accent. "
+    "Keep Brazilian Portuguese pronunciation and phonology consistent from beginning to end. "
+    "Do not use European Portuguese pronunciation, vowel reduction, rhythm, intonation or consonant patterns. "
+    "Pronounce words naturally as a native Brazilian speaker would. "
+)
+
+
 @dataclass(frozen=True)
 class VoiceProfile:
     id: str
@@ -9,22 +17,13 @@ class VoiceProfile:
 
 
 VOICE_PROFILES = {
-    "narrator-epic": VoiceProfile(
-        id="narrator-epic",
-        name="Narrador de Fantasia Épica",
+    "narrator-br": VoiceProfile(
+        id="narrator-br",
+        name="Narrador BR",
         instruction=(
-            "Adult male narrator with a deep, warm and resonant voice. "
-            "Epic dark-fantasy storyteller, cinematic and serious. "
-            "Clear Brazilian Portuguese diction. Slow, deliberate rhythm, "
-            "natural dramatic pauses, controlled intensity, no commercial-announcer style."
-        ),
-    ),
-    "narrator-mystery": VoiceProfile(
-        id="narrator-mystery",
-        name="Narrador de Mistério",
-        instruction=(
-            "Adult narrator with a low, intimate and mysterious voice. "
-            "Brazilian Portuguese, restrained suspense, careful pacing and subtle tension."
+            "Adult Brazilian male narrator with a deep, warm and resonant voice. "
+            "Clear diction, natural delivery and an immersive storytelling presence. "
+            + BRAZILIAN_PORTUGUESE_RULES
         ),
     ),
 }
