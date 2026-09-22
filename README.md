@@ -52,16 +52,16 @@ Requer Python 3.10 ou superior.
 
 ```bash
 git clone git@github.com:ferreis/voxarcana.git
-cd voxarcana/backend
+cd voxarcana
 
-python3 -m venv .venv
+./scripts/setup-dev.sh
+```
+
+Depois:
+
+```bash
+cd backend
 source .venv/bin/activate
-
-python -m pip install -U pip
-python -m pip install -e .
-
-cp .env.example .env
-
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
 ```
 
@@ -79,24 +79,25 @@ Resposta esperada:
 
 ## Baixar o modelo localmente
 
-O Transformers usado pelo projeto exige `huggingface-hub >=0.34,<1.0`. Não atualize o pacote para a série 1.x.
+O Transformers usado pelo projeto exige `huggingface-hub >=0.34,<1.0`.
+
+Use o script do projeto:
 
 ```bash
-python -m pip install -U "huggingface-hub[cli]>=0.34,<1.0"
-
-mkdir -p models
-
-hf download Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign \
-  --local-dir ./models/Qwen3-TTS-12Hz-1.7B-VoiceDesign
+cd ~/Documentos/Projetos/voxarcana
+git pull
+./scripts/download-model.sh
 ```
 
-Depois configure o `.env`:
+O script baixa o modelo público sem enviar tokens Hugging Face salvos no computador. Isso evita erros `401` causados por tokens antigos, inválidos ou expirados.
+
+Depois configure `backend/.env`:
 
 ```env
 VOXARCANA_MODEL=./models/Qwen3-TTS-12Hz-1.7B-VoiceDesign
 ```
 
-O modelo é carregado apenas na primeira geração.
+O modelo ocupa aproximadamente 4,5 GB.
 
 ## Instalar a extensão
 

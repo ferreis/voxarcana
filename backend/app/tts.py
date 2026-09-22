@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from io import BytesIO
 
@@ -38,6 +39,10 @@ class QwenVoiceDesignEngine:
     def _load(self):
         if self._model is not None:
             return self._model
+
+        # O modelo padrão do VoxArcana é público. Evita que um token
+        # Hugging Face inválido salvo no ambiente quebre downloads públicos.
+        os.environ.setdefault("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1")
 
         from qwen_tts import Qwen3TTSModel
 
