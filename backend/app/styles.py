@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from .voices import VOICE_PROFILES
+
 
 @dataclass(frozen=True)
 class StyleProfile:
@@ -98,7 +100,11 @@ LEGACY_VOICE_STYLE_MAP = {
 }
 
 
-def build_instruction(voice_id: str, style_id: str, custom_instruction: str | None = None) -> str:
+def build_instruction(
+    voice_id: str,
+    style_id: str,
+    custom_instruction: str | None = None,
+) -> str:
     voice = VOICE_PROFILES[voice_id]
     style = STYLE_PROFILES[style_id]
 
