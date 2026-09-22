@@ -20,7 +20,7 @@ Texto selecionado
 Extensão Chromium
       |
       v
-VoxArcana Local API
+VoxArcana Local API (protótipo)
       |
       v
 Qwen3-TTS
@@ -31,6 +31,8 @@ Qwen3-TTS
       v
 Navegador
 ```
+
+> A API HTTP é apenas a arquitetura de desenvolvimento inicial. A versão final deve iniciar o engine local automaticamente via Native Messaging, sem exigir que o usuário abra um backend manualmente.
 
 ## MVP atual
 
@@ -44,26 +46,26 @@ O repositório já contém:
 - menu de contexto `Narrar com VoxArcana`;
 - reprodução do áudio em documento offscreen.
 
-## Executar o backend
+## Executar o backend de desenvolvimento
 
-Requer Python 3.12.
+Requer Python 3.10 ou superior.
 
 ```bash
-git clone https://github.com/ferreis/voxarcana.git
+git clone git@github.com:ferreis/voxarcana.git
 cd voxarcana/backend
 
-python3.12 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 
-pip install -U pip
-pip install -e .
+python -m pip install -U pip
+python -m pip install -e .
 
 cp .env.example .env
 
-uvicorn app.main:app --host 127.0.0.1 --port 8765
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
 ```
 
-Teste:
+Teste em outro terminal:
 
 ```bash
 curl http://127.0.0.1:8765/health
@@ -90,7 +92,7 @@ No Chrome/Chromium:
 7. Clique com o botão direito.
 8. Escolha **Narrar com VoxArcana**.
 
-A API precisa estar rodando em `127.0.0.1:8765`.
+Durante o MVP, a API de desenvolvimento precisa estar rodando em `127.0.0.1:8765`.
 
 ## Configuração de hardware
 
@@ -129,6 +131,6 @@ Voice Clone
 Narrador VoxArcana
 ```
 
-Depois disso entram os perfis masculino, feminino e vozes específicas por personagem.
+Depois disso, substituir a API HTTP por um engine local iniciado automaticamente pela extensão e adicionar os perfis masculino, feminino e vozes específicas por personagem.
 
 Consulte [docs/ROADMAP.md](docs/ROADMAP.md) e [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
