@@ -1,4 +1,3 @@
-const API_URL = "http://127.0.0.1:8765/v1/speech";
 const OFFSCREEN_URL = "offscreen.html";
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -32,34 +31,13 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
   }
 
   try {
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        text: info.selectionText,
-        voice: "narrator-epic",
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`VoxArcana API returned ${response.status}`);
-    }
-
-    const blob = await response.blob();
-    const reader = new FileReader();
-    const dataUrl = await new Promise((resolve, reject) => {
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-
     await ensureOffscreenDocument();
+
     await chrome.runtime.sendMessage({
       target: "offscreen",
-      type: "play-audio",
-      dataUrl,
+      type: "speak",
+      text: info.selectionText,
+      voice: "narrator-epic",
     });
   } catch (error) {
     console.error("VoxArcana:", error);
