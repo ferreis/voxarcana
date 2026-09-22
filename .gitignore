@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Environment
+.env
+
+# Models and generated audio
+models/
+voices/
+output/
+*.wav
+*.mp3
+*.flac
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Extension packages
+*.crx
+*.zip
