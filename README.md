@@ -77,7 +77,26 @@ Resposta esperada:
 {"status":"ok"}
 ```
 
-O modelo do Qwen é carregado apenas na primeira geração. Na primeira execução, os pesos também podem precisar ser baixados.
+## Baixar o modelo localmente
+
+O Transformers usado pelo projeto exige `huggingface-hub >=0.34,<1.0`. Não atualize o pacote para a série 1.x.
+
+```bash
+python -m pip install -U "huggingface-hub[cli]>=0.34,<1.0"
+
+mkdir -p models
+
+hf download Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign \
+  --local-dir ./models/Qwen3-TTS-12Hz-1.7B-VoiceDesign
+```
+
+Depois configure o `.env`:
+
+```env
+VOXARCANA_MODEL=./models/Qwen3-TTS-12Hz-1.7B-VoiceDesign
+```
+
+O modelo é carregado apenas na primeira geração.
 
 ## Instalar a extensão
 

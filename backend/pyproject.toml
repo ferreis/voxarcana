@@ -9,6 +9,7 @@ dependencies = [
     "pydantic-settings>=2.10,<3.0",
     "qwen-tts",
     "soundfile>=0.13,<1.0",
+    "huggingface-hub>=0.34,<1.0",
 ]
 
 [project.optional-dependencies]
