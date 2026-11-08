@@ -36,12 +36,14 @@
 
 ## Fase 3 — Extensão
 
-- [ ] Criar tela de configurações.
-- [ ] Selecionar voz.
-- [ ] Selecionar estilo.
+- [x] Criar janela com caixa de texto e configurações.
+- [x] Selecionar vozes PT-BR do Chrome ou perfil local.
+- [x] Selecionar estilo e descrição de voz personalizada.
 - [ ] Configurar atalho de teclado.
-- [ ] Adicionar parar/pausar/continuar.
-- [ ] Exibir erros de conexão com a API local.
+- [x] Adicionar parar/pausar/continuar.
+- [x] Exibir erros de conexão com a API local.
+- [x] Salvar preferências e rascunho durante a sessão.
+- [x] Manter reprodução com o popup fechado.
 
 ## Fase 4 — RPG
 

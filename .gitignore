@@ -26,3 +26,8 @@ output/
 # Extension packages
 *.crx
 *.zip
+
+# Local web app / isolated Brazilian voice runtime
+node_modules/
+frontend/dist/
+.venv-br/

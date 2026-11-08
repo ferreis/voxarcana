@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VoxArcana — ler texto</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <span class="brand-mark" aria-hidden="true">V</span>
+      <div><h1>VoxArcana</h1><p>Dê voz às suas palavras.</p></div>
+      <span class="language">PT-BR</span>
+    </header>
+    <main>
+      <form id="reader">
+        <div class="label-row">
+          <label for="text">O que você quer ouvir?</label>
+          <output id="count" for="text">0 / 10.000</output>
+        </div>
+        <textarea id="text" maxlength="10000" rows="6" placeholder="Escreva ou cole sua mensagem aqui…" aria-describedby="text-help"></textarea>
+        <p class="hint" id="text-help">Seu rascunho fica disponível ao reabrir a extensão nesta sessão.</p>
+        <label for="engine">Como ler</label>
+        <select id="engine">
+          <option value="browser">Vozes do Chrome · sem servidor local</option>
+          <option value="local">Voz personalizada · motor local</option>
+        </select>
+        <section id="browser-settings" aria-label="Vozes do Chrome">
+          <div class="label-row"><label for="browser-voice">Voz brasileira</label><button type="button" id="refresh-voices" class="text-button">Atualizar vozes</button></div>
+          <select id="browser-voice" aria-describedby="voice-help"></select>
+          <p id="voice-help" class="hint">As vozes dependem do Chrome e do sistema. Algumas precisam de internet.</p>
+          <label for="pitch">Tonalidade <output id="pitch-value" for="pitch">1,0</output></label>
+          <input type="range" id="pitch" min="0" max="2" step="0.1" value="1" />
+        </section>
+        <section id="local-settings" hidden aria-label="Voz personalizada">
+          <p class="hint">Usa o Qwen3-TTS no seu computador. O servidor local precisa estar iniciado.</p>
+          <div class="local-row">
+            <div><label for="local-voice">Perfil de voz</label><select id="local-voice"><option value="narrator-br">Narrador BR</option></select></div>
+            <div><label for="style">Estilo</label><select id="style"></select></div>
+          </div>
+          <label for="instruction">Como a voz deve soar?</label>
+          <textarea id="instruction" rows="2" maxlength="2000" placeholder="Ex.: voz feminina brasileira, suave e acolhedora, com dicção clara." aria-describedby="instruction-help"></textarea>
+          <p class="hint" id="instruction-help">Descreva timbre, sotaque e emoção. A voz é gerada por descrição e pode variar entre leituras; não é clonagem de áudio.</p>
+          <button type="button" id="check-local" class="secondary">Verificar motor local</button>
+          <p id="connection" class="hint" role="status"></p>
+        </section>
+        <label for="rate">Velocidade <output id="rate-value" for="rate">1,0×</output></label>
+        <input type="range" id="rate" min="0.5" max="2" step="0.1" value="1" />
+        <div class="controls">
+          <button type="submit" id="speak" class="primary">Ler mensagem</button>
+          <button type="button" id="pause" class="secondary" disabled>Pausar</button>
+          <button type="button" id="stop" class="secondary" disabled>Parar</button>
+        </div>
+      </form>
+      <p id="status" role="status" aria-live="polite">Pronto para ler.</p>
+    </main>
+    <footer>Também funciona pelo botão direito em um texto selecionado.</footer>
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>
