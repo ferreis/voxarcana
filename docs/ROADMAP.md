@@ -53,3 +53,13 @@
 - [ ] Cadastro de vozes por personagem.
 - [ ] Investigar identificação automática de diálogo.
 - [ ] Investigar leitura de metadados/HTML do site para identificar personagem.
+
+## Estúdio brasileiro em uma aba
+
+- [x] Interface Vue 3 para texto, interpretação, reprodução e download.
+- [x] Modelo Chatterbox específico de PT-BR, em ambiente separado do Qwen.
+- [x] Referência masculina de corpus brasileiro aberto e referência feminina oficial.
+- [x] Cadastro local de gravação de referência autorizada.
+- [x] Fila de geração, andamento por trechos, cancelamento e recuperação ao reabrir a aba.
+- [x] Layouts para monitor, tablet e celular.
+- [ ] Aprovação da voz de narrador por escuta do jogador.

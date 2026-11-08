@@ -16,7 +16,7 @@ from .config import get_settings
 from .styles import LEGACY_VOICE_STYLE_MAP, STYLE_PROFILES, build_instruction
 from .tts import get_engine
 from .voices import VOICE_PROFILES
-from .brazilian import voice_catalog, REFERENCE_DIR, MODEL_DIR
+from .brazilian import voice_catalog, reference_path, REFERENCE_DIR, MODEL_DIR
 from .jobs import queue
 
 app = FastAPI(title='VoxArcana Studio', version='0.4.0', description='Narração local em PT-BR.')
@@ -120,6 +120,19 @@ def add_reference(audio: UploadFile = File(...), name: str = Form(min_length=1, 
     (REFERENCE_DIR / f'{voice_id}.json').write_text(json.dumps({'name': name.strip()}, ensure_ascii=False))
     return {'id': voice_id, 'name': name.strip(), 'locale': 'pt-BR',
             'description': 'Sua gravação de referência.'}
+
+
+@app.get('/v1/voices/{voice_id}/reference')
+def reference_audio(voice_id: str):
+    if get_settings().engine != 'chatterbox-br':
+        raise HTTPException(409, 'O motor ativo não usa referência de voz.')
+    try:
+        path = reference_path(voice_id)
+    except ValueError as error:
+        raise HTTPException(404, 'Voz não encontrada.') from error
+    if not path.is_file():
+        raise HTTPException(404, 'Referência não encontrada.')
+    return FileResponse(path, media_type='audio/wav', headers={'Cache-Control': 'no-store'})
 
 
 @app.post('/v1/speech')

@@ -24,7 +24,9 @@ class SpeechCancelled(Exception):
 
 
 def voice_catalog():
-    voices = [{'id': 'narrator-br', 'name': 'Brasileira · demonstração', 'locale': 'pt-BR',
+    voices = [{'id': 'narrator-br', 'name': 'Narrador brasileiro', 'locale': 'pt-BR',
+               'description': 'Referência masculina do TTS-Portuguese Corpus · CC BY 4.0.'},
+              {'id': 'br-demo', 'name': 'Brasileira · demonstração', 'locale': 'pt-BR',
                'description': 'Voz feminina da demonstração oficial brasileira.'}]
     for path in sorted(REFERENCE_DIR.glob('*.json')):
         import json
@@ -40,6 +42,8 @@ def voice_catalog():
 
 def reference_path(voice):
     if voice == 'narrator-br':
+        return MODEL_DIR / 'narrador-br.wav'
+    if voice == 'br-demo':
         return MODEL_DIR / 'pt_br_f2.wav'
     # Resolve only previously registered voice IDs, never an arbitrary client path.
     if voice not in {item['id'] for item in voice_catalog()}:
