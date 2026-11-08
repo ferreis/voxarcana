@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from .voices import VOICE_PROFILES
+from .voices import BRAZILIAN_PORTUGUESE_RULES, VOICE_PROFILES
 
 
 @dataclass(frozen=True)
@@ -108,9 +108,11 @@ def build_instruction(
     voice = VOICE_PROFILES[voice_id]
     style = STYLE_PROFILES[style_id]
 
-    parts = [voice.instruction, style.instruction]
-
+    # A custom voice description replaces the profile's timbre (e.g. male/female),
+    # while preserving Brazilian Portuguese and the chosen narration style.
     if custom_instruction and custom_instruction.strip():
-        parts.append(custom_instruction.strip())
+        parts = [custom_instruction.strip(), BRAZILIAN_PORTUGUESE_RULES, style.instruction]
+    else:
+        parts = [voice.instruction, style.instruction]
 
     return " ".join(parts)

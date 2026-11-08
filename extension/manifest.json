@@ -1,19 +1,24 @@
 {
   "manifest_version": 3,
   "name": "VoxArcana",
-  "version": "0.1.0",
-  "description": "Narra texto selecionado usando o VoxArcana TTS local.",
+  "version": "0.3.0",
+  "description": "Leia textos digitados ou selecionados com vozes em português e narração local personalizada.",
   "permissions": [
     "contextMenus",
-    "offscreen"
+    "offscreen",
+    "storage",
+    "tts"
   ],
   "host_permissions": [
     "http://127.0.0.1:8765/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "action": {
-    "default_title": "VoxArcana"
-  }
+    "default_title": "VoxArcana — ler texto",
+    "default_popup": "popup.html"
+  },
+  "minimum_chrome_version": "116"
 }
