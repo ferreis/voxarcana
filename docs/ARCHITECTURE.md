@@ -1,50 +1,140 @@
-# Arquitetura do VoxArcana
+"""Automatic, persistent casting and bounded delivery controls."""
+from dataclasses import dataclass
+import hashlib
+import json
+from pathlib import Path
+from threading import Lock
 
-## Estúdio local
+from .scene import Scene, NARRATOR, identity
+from .tts import split_text
 
-```text
-Aba do navegador (Vue 3 + TypeScript)
-           |
-           | POST /v1/jobs + consulta de andamento
-           v
-FastAPI 127.0.0.1:8765 ── serve frontend/dist em /
-           |
-           v
-Fila limitada, uma geração por vez
-           |
-           v
-Chatterbox PT-BR + referência brasileira
-           |
-           | trechos <=280 caracteres, idioma pt do checkpoint PT-BR
-           v
-WAV em memória ── /v1/jobs/{id}/audio ── player / download
-```
+CAST_FILE = Path(__file__).resolve().parents[1] / 'voices/cast.json'
+_lock = Lock()
 
-`frontend/src/services/studio.ts` concentra HTTP. `composables/useStudio.ts` coordena configuração, rascunho local, envio, polling, reconexão, cancelamento e limpeza. Os componentes de áudio e de cadastro de referência cuidam da apresentação e de suas interações.
+# These guide the existing TTS and simple post-processing. They do not simulate
+# crying/laughter or promise exact acting from a reference-conditioned model.
+DELIVERY = {
+    'neutral': (.45, 1.0, 1.0, .18),
+    'warm': (.5, .98, 1.0, .20),
+    'playful': (.6, 1.03, 1.0, .15),
+    'firm': (.55, .97, 1.0, .24),
+    'urgent': (.65, 1.07, 1.0, .12),
+    'soft': (.35, .95, 1.0, .24),
+    'sad': (.4, .94, 1.0, .30),
+    'tense': (.45, .96, 1.0, .30),
+    'angry': (.65, 1.04, 1.0, .16),
+    'fear': (.5, 1.04, 1.0, .16),
+}
 
-`backend/app/brazilian.py` carrega o checkpoint específico de PT-BR com o código do demo oficial fixado por revisão, baixado por `scripts/download-br.py`. As importações ficam em um namespace isolado para evitar conflito com outros pacotes `chatterbox`. A carga ocorre em CPU antes da movimentação dos pesos para GPU. O arquivo `narrador-br.wav` oferece uma referência masculina brasileira de corpus aberto; outra referência é a gravação feminina do demo PT-BR. Uma descrição em linguagem natural não substitui a referência neste motor.
 
-`backend/app/jobs.py` mantém até três trabalhos ativos e uma fila de execução única. Atualizações são protegidas por lock. O cancelamento é cooperativo, verificado antes e depois de cada trecho; uma geração do modelo já em curso termina antes de ser descartada. Áudios concluídos têm retenção limitada em memória, expiram ao reiniciar o servidor e podem ser removidos ao enviar novos trabalhos após uma hora ou quando o limite de retenção é atingido.
+@dataclass
+class Unit:
+    text: str
+    speaker: str
+    voice: str
+    gender: str
+    delivery: str
+    pitch: float
+    speed: float
+    gain: float
+    expression: float
+    pause: float
+    seed: int
+    source_id: int
 
-As referências do usuário são validadas por tamanho e duração, decodificadas, convertidas em mono e armazenadas sob identificadores UUID em `backend/voices/references`. O nome original do arquivo nunca vira caminho de leitura. O servidor escuta em loopback. Escritas HTTP com Origin são limitadas às origens locais conhecidas e a extensões Chrome; CORS não é uma autenticação e este servidor não foi feito para exposição pública.
 
-## API
+def _profiles(scene, catalog, narrator_voice):
+    """Choose actual references, rechecking eligibility after library edits."""
+    with _lock:
+        try:
+            saved = json.loads(CAST_FILE.read_text())
+            if not isinstance(saved, dict):
+                saved = {}
+        except (OSError, ValueError):
+            saved = {}
+        result = {}
+        for span in scene.spans:
+            if span.kind != 'dialogue':
+                continue
+            key = identity(span.speaker)
+            digest = hashlib.sha256(key.encode()).digest()
+            old = saved.get(key, {})
+            gender = span.gender
+            kind = span.voice_kind
+            candidates = [v for v in catalog if v['id'] != narrator_voice
+                          and v.get('role', 'both') in {'both', 'character'}
+                          and v.get('kind', 'human') == kind
+                          and (gender == 'unknown' or v.get('gender', 'unknown') == gender)]
+            if span.voice_override:
+                candidates = [v for v in catalog if v['id'] == span.voice_override and v['id'] != narrator_voice
+                              and v.get('role', 'both') in {'both', 'character'}]
+            if gender == 'unknown':
+                neutral = [v for v in candidates if v.get('gender') in {'neutral', 'unknown'}]
+                candidates = neutral or candidates
+            if candidates:
+                candidates = sorted(candidates, key=lambda v: v['id'])
+                eligible = {v['id'] for v in candidates}
+                previous = old.get('voice') if isinstance(old, dict) else None
+                voice = previous if previous in eligible else candidates[int.from_bytes(digest[:4], 'big') % len(candidates)]['id']
+            else:
+                voice = None
+            profile = {'name': span.speaker, 'gender': gender, 'kind': kind,
+                       'voice': voice, 'pitch': 0,
+                       'seed': int.from_bytes(digest[2:6], 'big') % 2147483647}
+            saved[key] = result[key] = profile
+        if result:
+            CAST_FILE.parent.mkdir(parents=True, exist_ok=True)
+            temporary = CAST_FILE.with_suffix('.tmp')
+            temporary.write_text(json.dumps(saved, ensure_ascii=False, indent=2))
+            temporary.replace(CAST_FILE)
+        return result
 
-- `GET /health`: disponibilidade e motor selecionado.
-- `GET /v1/engine`: capacidades e instalação do motor.
-- `GET /v1/voices`, `GET /v1/styles`: catálogo.
-- `POST /v1/voices/reference`: cadastro de referência WAV/FLAC.
-- `GET /v1/voices/{id}/reference`: ouvir a gravação original.
-- `POST /v1/jobs`: enfileira narração brasileira.
-- `GET /v1/jobs/{id}`: andamento e erro.
-- `DELETE /v1/jobs/{id}`: pede cancelamento.
-- `GET /v1/jobs/{id}/audio`: WAV concluído.
-- `POST /v1/speech`: síntese síncrona preservada para a extensão.
 
-## Qwen e extensão anteriores
+def build_units(scene: Scene, narrator_voice: str, limit: int = 240, style: str = 'neutral') -> list[Unit]:
+    from .brazilian import voice_catalog
+    profiles = _profiles(scene, voice_catalog(), narrator_voice)
+    missing = sorted({span.speaker for span in scene.spans if span.text and span.kind == 'dialogue'
+                      and not profiles.get(identity(span.speaker), {}).get('voice')})
+    if missing:
+        raise ValueError('Falta uma voz de personagem compatível para: ' + ', '.join(missing) +
+                         '. Importe ou classifique outra gravação como Personagem ou Ambos, '
+                         'com gênero e tipo compatíveis. A voz selecionada do narrador é reservada à narração.')
+    units = []
+    for span in scene.spans:
+        if not span.text:
+            continue
+        profile = profiles.get(identity(span.speaker), {})
+        gender = profile.get('gender', span.gender)
+        voice = narrator_voice if span.kind != 'dialogue' else span.voice_override or profile['voice']
+        # Preserve the recorded timbre; pitch shifting made voices sound artificial.
+        pitch = 0.0
+        chunks = split_text(span.text, limit)
+        for chunk in chunks:
+            # A new exclamation in an otherwise playful speech can become a
+            # command without changing its speaker/reference.
+            delivery = span.delivery
+            if chunk.rstrip().endswith('!') and delivery in {'neutral', 'warm', 'playful'}:
+                delivery = 'urgent'
+            expr, pace, volume, gap = DELIVERY[delivery]
+            if style == 'storyteller':
+                expr = min(.8, expr + .12)
+            elif style == 'calm':
+                expr = max(.25, expr - .10)
+            # Show the actual casting rather than only the inferred speaker.
+            span.voice_id = voice
+            units.append(Unit(chunk, span.speaker, voice, gender, delivery, pitch,
+                              pace, volume, expr, gap,
+                              int(profile.get('seed', 42)), span.id))
+    return units
 
-O ambiente `.venv` e a seleção `VOXARCANA_ENGINE=qwen` preservam o Qwen3-TTS VoiceDesign. `.venv-br` usa as dependências incompatíveis do carregador brasileiro. `start-studio.sh` seleciona explicitamente `chatterbox-br` e serve interface + API em um único endereço.
+### Volume consistente entre vozes
 
-A extensão Manifest V3 continua com `chrome.tts` ou requisição síncrona ao backend local. Seu documento offscreen reproduz WAV/Blob sem manter o popup aberto. O menu de seleção usa as configurações salvas. A extensão não precisa ser instalada para usar o estúdio em uma aba.
+Cada trecho sintetizado, incluindo o narrador, é normalizado antes da montagem. A referência é a sonoridade percebida (alvo de −18 LUFS), com controle de pico de −1,5 dBTP. Falas muito curtas usam um ajuste por energia com margem de pico quando a medição integrada não é possível. Silêncio não é amplificado. A normalização não altera duração, altura ou velocidade.
 
-Clonagem por referência é oferecida pelo motor brasileiro. A naturalidade, semelhança com o falante e consistência entre trechos precisam de validação por escuta; não são garantidas pelo locale ou por uma resposta HTTP bem-sucedida.
+As emoções continuam guiando a expressividade e as pausas, mas deixam de multiplicar o volume de cada personagem. O nivelamento vale para novas gerações e para o WAV baixado; arquivos antigos precisam ser gerados novamente. A velocidade de exportação é aplicada depois desse nivelamento.
+
+## Normalização de sonoridade por trecho
+
+`app/loudness.py` mede a sonoridade com `FFmpeg loudnorm` (EBU R128) e executa uma segunda passagem com as medições: alvo −18 LUFS, true peak −1,5 dBTP e LRA 11. Prioriza ganho linear quando possível, com controle de picos quando necessário. Entradas silenciosas são preservadas; trechos sem janela suficiente para loudness integrado usam energia ativa e limite de pico. Dados não finitos são rejeitados. O número de amostras e o sample rate são preservados.
+
+`BrazilianEngine` aplica essa etapa a cada trecho antes das pausas e da concatenação, tanto no elenco automático quanto na síntese simples do narrador. Não basta normalizar uma única vez o arquivo final, pois isso conservaria a diferença entre personagens. O ganho por emoção foi removido da aplicação; os controles de expressividade e pausas continuam. O ajuste global de velocidade do WAV continua posterior à montagem.

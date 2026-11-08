@@ -29,6 +29,9 @@ class StudioApiTest(unittest.TestCase):
         self.settings = patch('backend.app.main.get_settings', return_value=SimpleNamespace(engine='chatterbox-br'))
         self.settings.start()
         self.addCleanup(self.settings.stop)
+        catalog = patch('backend.app.main.voice_catalog', return_value=[{'id': 'imported-narrator', 'role': 'narrator'}])
+        catalog.start()
+        self.addCleanup(catalog.stop)
         self.client = TestClient(app)
 
     def test_input_validation_and_unknown_voices(self):
@@ -37,16 +40,35 @@ class StudioApiTest(unittest.TestCase):
         self.assertEqual(self.client.post('/v1/jobs', json={'text': 'Olá', 'style': 'invalid'}).status_code, 404)
         self.assertEqual(self.client.post('/v1/jobs', json={'text': 'Olá', 'instruction': 'Voz grave'}).status_code, 422)
 
+    def test_empty_library_requires_import_and_removed_defaults_are_not_selected(self):
+        with patch('backend.app.main.voice_catalog', return_value=[]):
+            self.assertEqual(self.client.post('/v1/jobs', json={'text': 'Uma cena.'}).status_code, 422)
+            self.assertEqual(self.client.post('/v1/jobs', json={'text': 'Uma cena.', 'voice': 'narrator-br'}).status_code, 404)
+
+    def test_dialogue_needs_another_character_voice_before_queueing(self):
+        with patch('backend.app.main.voice_catalog', return_value=[{'id': 'carlos', 'role': 'both'}]), \
+             patch('backend.app.main.queue.submit') as submit:
+            response = self.client.post('/v1/jobs', json={'text': '"Volte!" disse Garrin.', 'voice': 'carlos'})
+            self.assertEqual(response.status_code, 422)
+            self.assertIn('outra voz', response.json()['detail'])
+            submit.assert_not_called()
+        with patch('backend.app.main.voice_catalog', return_value=[{'id': 'actor', 'role': 'character'}]):
+            response = self.client.post('/v1/jobs', json={'text': 'Narração.', 'voice': 'actor'})
+            self.assertEqual(response.status_code, 422)
+
     def test_external_origin_cannot_start_generation(self):
         response = self.client.post('/v1/jobs', json={'text': 'Olá'}, headers={'Origin': 'https://outside.example'})
         self.assertEqual(response.status_code, 403)
 
     def test_reference_upload_validates_audio_and_registers_normalized_file(self):
         with TemporaryDirectory() as directory, patch('backend.app.main.REFERENCE_DIR', Path(directory)):
-            response = self.client.post('/v1/voices/reference', data={'name': 'Minha voz BR'},
+            response = self.client.post('/v1/voices/reference', data={'name': 'Minha voz BR', 'role': 'character', 'gender': 'female', 'kind': 'human'},
                                         files={'audio': ('voice.wav', sample_wav(), 'audio/wav')})
             self.assertEqual(response.status_code, 200)
             voice_id = response.json()['id']
+            self.assertEqual(response.json()['role'], 'character')
+            self.assertEqual(response.json()['gender'], 'female')
+            self.assertNotIn('register', response.json())
             self.assertTrue((Path(directory) / f'{voice_id}.wav').is_file())
             self.assertTrue((Path(directory) / f'{voice_id}.json').is_file())
             short = self.client.post('/v1/voices/reference', data={'name': 'Curta'},
@@ -65,7 +87,7 @@ class StudioApiTest(unittest.TestCase):
         with patch('backend.app.main.queue.submit', return_value=SimpleNamespace(id='job')) as submit:
             response = self.client.post('/v1/jobs', json={'text': ' Uma cena. ', 'style': 'epic'})
             self.assertEqual(response.status_code, 202)
-            submit.assert_called_once_with({'text': 'Uma cena.', 'voice': 'narrator-br', 'style': 'epic'})
+            submit.assert_called_once_with({'text': 'Uma cena.', 'voice': 'imported-narrator', 'style': 'epic', 'automatic': True, 'speed': 1.0})
 
 
 class BrazilianGenerationTest(unittest.TestCase):
@@ -109,6 +131,27 @@ class BrazilianGenerationTest(unittest.TestCase):
 
 
 class QueueTest(unittest.TestCase):
+    def test_analysis_progress_and_results_are_exposed_separately_from_audio(self):
+        queue = JobQueue()
+        engine = Mock()
+        def generate(**kwargs):
+            kwargs['on_stage']('analyzing')
+            kwargs['on_analysis'](25, 'Interpretando a cena.')
+            kwargs['on_analysis'](100, 'Interpretação validada.')
+            kwargs['on_scene']({'method': 'test', 'segments': []})
+            kwargs['on_stage']('synthesizing')
+            kwargs['progress'](1, 2)
+            return b'wav'
+        engine.synthesize.side_effect = generate
+        with patch('backend.app.jobs.get_engine', return_value=engine):
+            job = queue.submit({'text': 'Cena.', 'automatic': True})
+            queue.pool.shutdown(wait=True)
+        result = queue.snapshot(job.id)
+        self.assertEqual(result['analysis_percent'], 100)
+        self.assertEqual(result['analysis_events'], ['Interpretando a cena.', 'Interpretação validada.'])
+        self.assertEqual((result['completed'], result['total']), (1, 2))
+        self.assertEqual(result['status'], 'done')
+
     def test_cancelled_active_and_queued_jobs_never_publish_audio(self):
         queue = JobQueue()
         started = Event()

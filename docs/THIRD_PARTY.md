@@ -30,3 +30,8 @@ A referência masculina `narrador-br.wav` é uma adaptação dos arquivos de fal
 ## Dependências
 
 As bibliotecas de frontend e Python mantêm suas próprias licenças. `frontend/package-lock.json` fixa a resolução do frontend; `backend/requirements-br.txt` lista as dependências do carregador brasileiro. As gravações enviadas pelo usuário permanecem locais e não entram no repositório.
+
+
+## Analisador de contexto
+
+Qwen3 4B Instruct 2507, quantização Q4_K_M, distribuído pelo Ollama como `qwen3:4b-instruct-2507-q4_K_M`. Licença do modelo: Apache 2.0. Modelo: https://ollama.com/library/qwen3:4b-instruct-2507-q4_K_M . Autoria: Qwen/Alibaba. O modelo é usado para inferência local, sem envio do texto a uma API paga. O Ollama tem suas próprias condições/licença: https://github.com/ollama/ollama .

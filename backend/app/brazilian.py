@@ -11,6 +11,8 @@ import numpy as np
 import soundfile as sf
 
 from .tts import split_text
+from .audio_speed import change_speed
+from .loudness import normalize_voice
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / 'models/chatterbox-ptbr'
@@ -24,27 +26,22 @@ class SpeechCancelled(Exception):
 
 
 def voice_catalog():
-    voices = [{'id': 'narrator-br', 'name': 'Narrador brasileiro', 'locale': 'pt-BR',
-               'description': 'Referência masculina do TTS-Portuguese Corpus · CC BY 4.0.'},
-              {'id': 'br-demo', 'name': 'Brasileira · demonstração', 'locale': 'pt-BR',
-               'description': 'Voz feminina da demonstração oficial brasileira.'}]
+    voices = []
     for path in sorted(REFERENCE_DIR.glob('*.json')):
         import json
         try:
             item = json.loads(path.read_text())
             if (REFERENCE_DIR / f'{path.stem}.wav').is_file():
                 voices.append({'id': path.stem, 'name': str(item['name']), 'locale': 'pt-BR',
-                               'description': 'Sua gravação de referência.'})
+                               'description': 'Sua gravação de referência.', 'editable': True,
+                               **{key: item.get(key, default) for key, default in
+                                  [('role', 'both'), ('gender', 'unknown'), ('kind', 'human')]}})
         except (OSError, ValueError, KeyError):
             logger.warning('Perfil de referência inválido: %s', path.name)
     return voices
 
 
 def reference_path(voice):
-    if voice == 'narrator-br':
-        return MODEL_DIR / 'narrador-br.wav'
-    if voice == 'br-demo':
-        return MODEL_DIR / 'pt_br_f2.wav'
     # Resolve only previously registered voice IDs, never an arbitrary client path.
     if voice not in {item['id'] for item in voice_catalog()}:
         raise ValueError('Voz não encontrada.')
@@ -90,14 +87,35 @@ class BrazilianEngine:
         self._model = model
         return model
 
-    def synthesize(self, text, instruction='', voice='narrator-br', style='neutral',
-                   progress=None, cancelled=None):
+    def synthesize(self, text, instruction='', voice='', style='neutral',
+                   progress=None, cancelled=None, automatic=False, scene=None,
+                   on_scene=None, on_unit=None, on_stage=None, on_analysis=None, speed=1.0):
         # Chatterbox uses reference audio, not prose describing the voice.
         if instruction and instruction.strip():
             raise ValueError('Este modelo usa gravação de referência para definir a voz. '
                              'Limpe a descrição textual de voz ou use o estúdio em uma aba.')
+        if automatic:
+            from .scene import get_reader
+            from .cast import build_units
+            if on_stage:
+                on_stage('analyzing')
+            scene = scene or get_reader().analyze(text, cancelled, on_progress=on_analysis)
+            if cancelled and cancelled():
+                raise SpeechCancelled()
+            units = build_units(scene, voice, style=style)
+            if on_scene:
+                on_scene(scene.public())
+        else:
+            units = None
         with self._lock:
+            if on_stage:
+                on_stage('loading')
             model = self._load()
+            if units is not None:
+                output = self._perform(model, units, progress, cancelled, on_unit, on_stage)
+                if cancelled and cancelled():
+                    raise SpeechCancelled()
+                return change_speed(output, speed)
             reference = reference_path(voice)
             if not reference.exists():
                 raise ValueError('Gravação de referência não encontrada. Reinstale o modelo brasileiro.')
@@ -122,9 +140,68 @@ class BrazilianEngine:
                     raise SpeechCancelled()
                 if index:
                     parts.append(np.zeros(int(model.sr * 0.15), dtype=np.float32))
-                parts.append(wav.squeeze(0).detach().cpu().numpy())
+                parts.append(normalize_voice(wav.squeeze(0).detach().cpu().numpy(), model.sr))
             if progress:
                 progress(len(chunks), len(chunks))
             output = BytesIO()
             sf.write(output, np.concatenate(parts), model.sr, format='WAV')
-            return output.getvalue()
+            if on_stage:
+                on_stage('assembling')
+            return change_speed(output.getvalue(), speed)
+
+    def _perform(self, model, units, progress, cancelled, on_unit, on_stage):
+        import copy
+        import torch
+        if not units:
+            raise ValueError('Digite um texto para narrar.')
+        parts = []
+        conditions = {}
+        active_voice = None
+        if on_stage:
+            on_stage('synthesizing')
+        for index, unit in enumerate(units):
+            if cancelled and cancelled():
+                raise SpeechCancelled()
+            if progress:
+                progress(index, len(units))
+            if on_unit:
+                on_unit(unit.speaker, unit.delivery)
+            reference = reference_path(unit.voice)
+            if not reference.is_file():
+                raise ValueError('A referência de voz não foi encontrada.')
+            prompt = None
+            if active_voice != unit.voice:
+                if unit.voice in conditions:
+                    # Store conditioning on CPU; keep only the active voice on
+                    # GPU so a larger cast does not exhaust a 6 GB card.
+                    model.conds = copy.deepcopy(conditions[unit.voice]).to(model.device)
+                else:
+                    prompt = str(reference)
+                active_voice = unit.voice
+            torch.manual_seed(unit.seed)
+            with torch.inference_mode():
+                wav = model.generate(unit.text, language_id='pt', audio_prompt_path=prompt,
+                                     exaggeration=unit.expression, cfg_weight=.5, temperature=.65)
+                if prompt:
+                    conditions[unit.voice] = copy.deepcopy(model.conds).to('cpu')
+            if cancelled and cancelled():
+                raise SpeechCancelled()
+            audio = wav.squeeze(0).detach().cpu().numpy()
+            # Keep model output at its native pace and pitch. Phase-vocoder
+            # stretching can make speech sound doubled or metallic.
+            audio = normalize_voice(audio, model.sr)
+            # Fade only the outer 5 ms to prevent clicks at voice switches.
+            fade = min(int(model.sr * .005), len(audio) // 2)
+            if fade:
+                audio[:fade] *= np.linspace(0, 1, fade)
+                audio[-fade:] *= np.linspace(1, 0, fade)
+            if index:
+                parts.append(np.zeros(int(model.sr * units[index - 1].pause), dtype=np.float32))
+            parts.append(audio)
+        if progress:
+            progress(len(units), len(units))
+        if on_stage:
+            on_stage('assembling')
+        output = BytesIO()
+        sf.write(output, np.concatenate(parts), model.sr, format='WAV')
+        return output.getvalue()
