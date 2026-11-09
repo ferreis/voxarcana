@@ -18,6 +18,7 @@ from .voices import VOICE_PROFILES
 from .brazilian import voice_catalog, reference_path, REFERENCE_DIR, MODEL_DIR
 from .jobs import queue
 from .reference_audio import MAX_UPLOAD_BYTES, normalize_reference
+from .youtube_audio import ExtractionBusy, canonical_video_url, extract_youtube_audio
 
 app = FastAPI(title='VoxArcana Studio', version='0.4.0', description='Narração local em PT-BR.')
 LOCAL_ORIGINS = ['http://127.0.0.1:8765', 'http://localhost:8765',
@@ -159,6 +160,30 @@ def delete_reference(voice_id: str):
         path.unlink()
         path.with_suffix('.wav').unlink(missing_ok=True)
     return {'id': voice_id, 'deleted': True}
+
+
+class YouTubeClipRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)
+    start_seconds: float = Field(default=0, ge=0, le=86400, allow_inf_nan=False)
+
+    @field_validator('url')
+    @classmethod
+    def youtube_only(cls, url):
+        return canonical_video_url(url)
+
+
+@app.post('/v1/audio/youtube')
+def youtube_clip(request: YouTubeClipRequest):
+    try:
+        wav = extract_youtube_audio(request.url, request.start_seconds)
+    except ExtractionBusy as error:
+        raise HTTPException(409, str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(503, str(error)) from error
+    except (ValueError, OSError, sf.LibsndfileError) as error:
+        raise HTTPException(422, str(error)) from error
+    return Response(content=wav, media_type='audio/wav', headers={
+        'Cache-Control': 'no-store', 'Content-Disposition': 'attachment; filename="youtube-30s.wav"'})
 
 
 @app.post('/v1/voices/reference')

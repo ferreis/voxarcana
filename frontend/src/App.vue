@@ -45,7 +45,11 @@ function example() {
   <div class="app-shell">
     <aside class="rail" aria-label="VoxArcana"><a class="brand-glyph" href="#studio" aria-label="VoxArcana, estúdio">V<span>✦</span></a><a class="rail-button active" href="#studio" aria-label="Estúdio de narração"><AudioLines :size="22" /></a><button class="rail-button" aria-label="Adicionar voz de referência" :disabled="!engine?.reference_audio" @click="referenceDialog?.open()"><Mic2 :size="21" /></button><button class="rail-button rail-help" aria-label="Como funciona" @click="showHelp = !showHelp"><CircleHelp :size="21" /></button></aside>
     <div class="workspace">
-      <header class="topbar"><a href="#studio" class="wordmark">Vox<span>Arcana</span><span class="studio-tag">ESTÚDIO</span></a><div class="header-actions"><button class="icon-button mobile-add-voice" aria-label="Adicionar voz de referência" :disabled="!engine?.reference_audio" @click="referenceDialog?.open()"><Mic2 :size="20" /></button><span class="locale-badge"><span aria-hidden="true">🇧🇷</span> Português do Brasil</span></div></header>
+      <header class="topbar">
+        <AudioPlayer :src="audioUrl" :title="audioTitle">
+          <template #actions><button class="icon-button mobile-add-voice" aria-label="Adicionar voz de referência" :disabled="!engine?.reference_audio" @click="referenceDialog?.open()"><Mic2 :size="20" /></button></template>
+        </AudioPlayer>
+      </header>
       <main id="studio">
         <section v-if="showHelp" class="help-strip"><BookOpen :size="22" /><div><strong>Da sua imaginação para a mesa.</strong><p>Para usar apenas a voz do narrador, clique em Gerar só com narrador. Para separar as falas dos personagens, clique em Analisar texto e escolher vozes. Confira os personagens, corrija nomes e gênero e escolha uma voz para cada um antes de gerar. Depois, ouça ou baixe o WAV. Para outro timbre de narrador, adicione uma gravação brasileira de referência. Você não precisa cadastrar os personagens nem descrever suas emoções. Tudo é gerado neste computador, sem assinatura.</p></div><button class="text-button" @click="showHelp = false">Entendi</button></section>
         <div v-if="error" class="error-message error-banner" role="alert"><span>{{ error }}</span><button v-if="!connected || notice" class="text-button" @click="studio.reconnect">Reconectar</button></div>
@@ -89,7 +93,6 @@ function example() {
         <details v-if="job?.scene?.segments.length" class="scene-preview"><summary>Como a cena foi interpretada <span>{{ cast.length }} personagens</span></summary><ol><li v-for="segment in job.scene.segments" :key="segment.id"><div><strong>{{ segment.speaker }}</strong><span>{{ deliveryNames[segment.delivery] || 'Natural' }} · {{ segment.kind === 'narration' ? selectedVoice?.name : voiceName(segment.voice_id) }}</span></div><p>{{ segment.text }}</p></li></ol></details>
         <GenerationProgress v-if="job" :job="job" :narration-only="narrationOnly" />
       </main>
-      <AudioPlayer :src="audioUrl" :title="audioTitle" />
       <footer class="page-footer"><span>VoxArcana <span class="footer-star">✦</span> Histórias ganham vida quando encontram uma voz.</span><button class="text-button" @click="showHelp = !showHelp">Como funciona <CircleHelp :size="13" /></button></footer>
     </div>
     <CharacterLibraryDialog ref="characterDialog" :voices="voices" />

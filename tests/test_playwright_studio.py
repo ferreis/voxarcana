@@ -7,11 +7,14 @@ Preparação:
     python -m unittest discover -s tests -p 'test_playwright_*.py'
 """
 import json
+import re
+from io import BytesIO
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
 import unittest
+import wave
 
 try:
     from playwright.sync_api import sync_playwright, expect
@@ -199,6 +202,134 @@ class StudioBrowserTests(unittest.TestCase):
             self.assertIn("biblioteca", page.locator("#narration-text").input_value().lower())
             self.assertTrue(page.get_by_role("button", name="Analisar texto e escolher vozes").is_enabled())
             self.assertEqual(page.locator("#voice").input_value(), "narrator-1")
+        finally:
+            page.close()
+
+    def test_youtube_recorta_baixa_e_importa_referencia_sem_gerar_narracao(self):
+        page = self.open_studio()
+        clip_requests = []
+        voice_uploads = []
+        narration_requests = []
+        audio_buffer = BytesIO()
+        with wave.open(audio_buffer, 'wb') as recording:
+            recording.setnchannels(1)
+            recording.setsampwidth(2)
+            recording.setframerate(24000)
+            recording.writeframes(b'\x00\x01' * (24000 * 30))
+        wav = audio_buffer.getvalue()
+
+        def extract_clip(route):
+            clip_requests.append(route.request.post_data_json)
+            route.fulfill(status=200, content_type='audio/wav', body=wav)
+
+        def save_voice(route):
+            voice_uploads.append(route.request.post_data_buffer)
+            route.fulfill(status=200, content_type='application/json', body=json.dumps({
+                'id': 'youtube-voice', 'name': 'Voz do trecho', 'role': 'both',
+                'gender': 'unknown', 'kind': 'human', 'editable': True}))
+
+        page.route('**/v1/audio/youtube', extract_clip)
+        page.route('**/v1/voices/reference', save_voice)
+        page.on('request', lambda request: narration_requests.append(request.url)
+                if '/v1/jobs' in request.url else None)
+        try:
+            page.get_by_role('button', name='Adicionar voz de referência', exact=True).click()
+            page.locator('#youtube-video-url').fill('https://youtu.be/BaW_jenozKc')
+            page.locator('#youtube-clip-start').fill('01:99')
+            page.get_by_role('button', name='Extrair 30 segundos', exact=True).click()
+            expect(page.get_by_text('Informe o início em segundos, mm:ss ou hh:mm:ss, até 24 horas.')).to_be_visible()
+            self.assertEqual(clip_requests, [])
+            page.locator('#youtube-clip-start').fill('01:20')
+            page.get_by_role('button', name='Extrair 30 segundos', exact=True).click()
+            download_link = page.get_by_role('link', name='Baixar áudio de 30 segundos')
+            expect(download_link).to_be_visible()
+            self.assertEqual(clip_requests, [{'url': 'https://youtu.be/BaW_jenozKc', 'start_seconds': 80}])
+            self.assertTrue(page.locator('audio[aria-label="Ouvir trecho extraído do YouTube"]').get_attribute('src').startswith('blob:'))
+            with page.expect_download() as download_info:
+                download_link.click()
+            self.assertEqual(download_info.value.suggested_filename, 'youtube-80s-30s.wav')
+            for viewport_width in [390, 768, 1440]:
+                page.set_viewport_size({'width': viewport_width, 'height': 1000})
+                self.assertTrue(page.locator('.reference-dialog[open]').evaluate(
+                    'dialog => dialog.scrollWidth <= dialog.clientWidth'))
+                page.screenshot(path=f'/tmp/voxarcana-youtube-{viewport_width}.png', full_page=True)
+            page.locator('#reference-name').fill('Voz do trecho')
+            page.get_by_role('button', name='Adicionar à minha mesa').click()
+            expect(page.get_by_role('dialog')).not_to_be_visible()
+            self.assertEqual(len(voice_uploads), 1)
+            self.assertIn(b'youtube-80s-30s.wav', voice_uploads[0])
+            self.assertIn(wav, voice_uploads[0])
+            self.assertEqual(page.locator('#voice').input_value(), 'youtube-voice')
+            self.assertEqual(narration_requests, [])
+        finally:
+            page.close()
+
+    def test_falha_do_youtube_mantem_dialogo_disponivel(self):
+        page = self.open_studio()
+        page.route('**/v1/audio/youtube', lambda route: route.fulfill(
+            status=422, content_type='application/json', body='{"detail":"Vídeo indisponível."}'))
+        try:
+            page.get_by_role('button', name='Adicionar voz de referência', exact=True).click()
+            page.locator('#youtube-video-url').fill('https://youtu.be/BaW_jenozKc')
+            page.get_by_role('button', name='Extrair 30 segundos', exact=True).click()
+            expect(page.get_by_text('Vídeo indisponível.')).to_be_visible()
+            expect(page.get_by_role('button', name='Extrair 30 segundos', exact=True)).to_be_enabled()
+            expect(page.locator('#reference-file')).to_be_enabled()
+            expect(page.get_by_role('button', name='Fechar', exact=True)).to_be_enabled()
+        finally:
+            page.close()
+
+    def test_player_no_topo_permanece_visivel_e_controla_volume_do_audio(self):
+        page = self.open_studio()
+        audio_buffer = BytesIO()
+        with wave.open(audio_buffer, 'wb') as recording:
+            recording.setnchannels(1)
+            recording.setsampwidth(2)
+            recording.setframerate(24000)
+            recording.writeframes(b'\x00\x01' * (24000 * 8))
+        page.route('**/v1/jobs', lambda route: route.fulfill(
+            status=202, content_type='application/json', body='{"id":"player-test"}'))
+        page.route('**/v1/jobs/player-test', lambda route: route.fulfill(
+            status=200, content_type='application/json', body=json.dumps({
+                'id': 'player-test', 'status': 'done', 'completed': 1, 'total': 1,
+                'error': None, 'scene': None})))
+        page.route('**/v1/jobs/player-test/audio', lambda route: route.fulfill(
+            status=200, content_type='audio/wav', body=audio_buffer.getvalue()))
+        try:
+            player = page.get_by_role('region', name='Reprodução da narração')
+            expect(player).to_have_count(1)
+            expect(page.locator('header .player')).to_be_visible()
+            volume_slider = page.get_by_role('slider', name='Volume da reprodução')
+            volume_slider.evaluate("slider => { slider.value = '0.35'; slider.dispatchEvent(new Event('input', { bubbles: true })); }")
+            page.locator('#narration-text').fill('Uma narração para testar o player.')
+            page.get_by_role('button', name='Gerar só com narrador', exact=True).click()
+            narration_audio = page.locator('header audio')
+            expect(narration_audio).to_have_attribute('src', re.compile('^blob:'))
+            page.wait_for_function("document.querySelector('header audio')?.readyState >= 1")
+            self.assertAlmostEqual(narration_audio.evaluate('audio => audio.volume'), .35)
+            volume_slider.focus()
+            volume_slider.press('ArrowRight')
+            self.assertAlmostEqual(narration_audio.evaluate('audio => audio.volume'), .36)
+            page.get_by_role('button', name='Silenciar áudio', exact=True).click()
+            self.assertEqual(narration_audio.evaluate('audio => audio.volume'), 0)
+            page.get_by_role('button', name='Ativar som', exact=True).click()
+            self.assertAlmostEqual(narration_audio.evaluate('audio => audio.volume'), .36)
+            page.get_by_role('button', name='Reproduzir narração', exact=True).click()
+            expect(page.get_by_role('button', name='Pausar narração', exact=True)).to_be_visible()
+            page.get_by_role('button', name='Pausar narração', exact=True).click()
+            expect(page.get_by_role('button', name='Reproduzir narração', exact=True)).to_be_visible()
+            page.locator('#narration-text').evaluate("editor => editor.style.minHeight = '1200px'")
+            for viewport_width in [320, 390, 768, 1024, 1440, 1920]:
+                page.set_viewport_size({'width': viewport_width, 'height': 900})
+                page.evaluate('window.scrollTo(0, 500)')
+                self.assertGreater(page.evaluate('window.scrollY'), 0)
+                self.assertAlmostEqual(page.locator('header').bounding_box()['y'], 0, delta=1)
+                self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'))
+                expect(volume_slider).to_be_in_viewport()
+                expect(page.get_by_role('button', name='Reproduzir narração', exact=True)).to_be_in_viewport()
+                page.screenshot(path=f'/tmp/voxarcana-top-player-{viewport_width}.png')
+            page.get_by_role('button', name='Parar reprodução', exact=True).click()
+            self.assertEqual(narration_audio.evaluate('audio => audio.currentTime'), 0)
         finally:
             page.close()
 
