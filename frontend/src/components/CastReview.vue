@@ -1,11 +1,27 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { Scene, Voice, ReviewedLine } from '../services/studio'
+import { studioApi, type SavedCharacter, type Scene, type Voice, type ReviewedLine } from '../services/studio'
+import { characterIdentity, findSavedCharacter, voiceUsedByAnother } from '../utils/characterVoices'
 const props = defineProps<{ scene: Scene; voices: Voice[]; narrator: string; disabled: boolean; stale: boolean }>()
 const emit = defineEmits<{ change: [lines: ReviewedLine[] | null] }>()
 interface Actor { key: string; name: string; gender: string; voice: string; saved: boolean }
 const actors = ref<Actor[]>([])
 const speakerForLine = ref<Record<number, string>>({})
+const savedCharacters = ref<SavedCharacter[]>([])
+const allowUsedVoice = ref(false)
+const loadingCharacters = ref(true)
+const characterError = ref('')
+let characterRequest = 0
+async function loadCharacters() {
+  const requestNumber = ++characterRequest
+  loadingCharacters.value = true; characterError.value = ''
+  try {
+    const characters = await studioApi.characters()
+    if (requestNumber === characterRequest) savedCharacters.value = characters
+  } catch {
+    if (requestNumber === characterRequest) characterError.value = 'Não consegui conferir as vozes do elenco salvo.'
+  } finally { if (requestNumber === characterRequest) loadingCharacters.value = false }
+}
 const dialogue = computed(() => props.scene.segments.filter(segment => segment.kind === 'dialogue'))
 const characterVoices = computed(() => props.voices.filter(voice => voice.id !== props.narrator && voice.role !== 'narrator'))
 watch(() => props.scene, scene => {
@@ -18,13 +34,36 @@ watch(() => props.scene, scene => {
   }
   actors.value = [...found.values()]; speakerForLine.value = assignments
 }, { immediate: true })
-function options(actor: Actor) {
-  return characterVoices.value.filter(voice => actor.gender === 'unknown' || voice.gender === actor.gender || voice.gender === 'unknown')
+watch(() => props.scene, () => { allowUsedVoice.value = false; void loadCharacters() }, { immediate: true })
+function actorIdentity(actor: Actor) {
+  return savedActor(actor)?.id || characterIdentity(actor.name)
 }
-watch([characterVoices, () => actors.value.map(actor => actor.gender)], () => {
-  for (const actor of actors.value) if (!options(actor).some(voice => voice.id === actor.voice)) actor.voice = ''
+function savedActor(actor: Actor) {
+  return findSavedCharacter(savedCharacters.value, actor.name) || findSavedCharacter(savedCharacters.value, actor.key)
+}
+function compatibleVoices(actor: Actor) {
+  const savedCharacter = savedActor(actor)
+  return characterVoices.value.filter(voice => {
+    if (actor.gender !== 'unknown' && voice.gender !== actor.gender && voice.gender !== 'unknown') return false
+    if (allowUsedVoice.value) return true
+    return !voiceUsedByAnother(savedCharacters.value, voice.id, savedCharacter?.id)
+  })
+}
+function options(actor: Actor) {
+  return compatibleVoices(actor).filter(voice => allowUsedVoice.value
+    || !actors.value.some(otherActor => otherActor.key !== actor.key && otherActor.voice === voice.id && actorIdentity(otherActor) !== actorIdentity(actor)))
+}
+watch([characterVoices, savedCharacters, allowUsedVoice, () => actors.value.map(actor => [actor.name, actor.gender, actor.voice])], () => {
+  if (loadingCharacters.value) return
+  const assignedVoices = new Map<string, string>()
+  for (const actor of actors.value) {
+    const owner = assignedVoices.get(actor.voice)
+    if (!compatibleVoices(actor).some(voice => voice.id === actor.voice)
+      || (!allowUsedVoice.value && owner !== undefined && owner !== actorIdentity(actor))) actor.voice = ''
+    if (actor.voice) assignedVoices.set(actor.voice, actorIdentity(actor))
+  }
 }, { deep: true })
-const ready = computed(() => !props.disabled && !props.stale && dialogue.value.every(line => {
+const ready = computed(() => !props.disabled && !props.stale && !loadingCharacters.value && !characterError.value && dialogue.value.every(line => {
   const actor = actors.value.find(candidate => candidate.key === speakerForLine.value[line.id])
   return actor && actor.name.trim() && actor.name.trim().toLocaleLowerCase('pt-BR') !== 'narrador' && options(actor).some(voice => voice.id === actor.voice)
 }))
@@ -43,7 +82,11 @@ watch(reviewedLines, lines => emit('change', lines), { immediate: true })
     <h2 id="cast-review-title">Confira as vozes da cena</h2>
     <p>Confira ou altere as vozes dos personagens. Quando terminar, clique em Gerar áudio.</p>
     <p v-if="stale" class="error-message">O texto mudou. Clique em Analisar novamente.</p>
-    <fieldset :disabled="disabled || stale">
+    <p v-if="loadingCharacters" class="field-help" role="status">Conferindo as vozes do elenco salvo…</p>
+    <p v-if="characterError" class="error-message" role="alert">{{ characterError }} <button class="text-button" @click="loadCharacters">Tentar novamente</button></p>
+    <fieldset :disabled="disabled || stale || loadingCharacters || !!characterError">
+      <label v-if="dialogue.length" class="reuse-voice-option"><input v-model="allowUsedVoice" type="checkbox"> Usar voz já utilizada</label>
+      <p v-if="dialogue.length" class="field-help">Por padrão, vozes escolhidas por outros personagens da cena ou do elenco salvo ficam ocultas. Apelidos do mesmo personagem compartilham a voz.</p>
       <div v-for="(actor, index) in actors" :key="actor.key" class="actor-row" :class="{ 'saved-actor': actor.saved }">
         <div><label :for="`actor-name-${index}`">Personagem <span v-if="actor.saved" class="saved-badge">Salvo</span></label><input :id="`actor-name-${index}`" v-model="actor.name" maxlength="80"></div>
         <div><label :for="`actor-gender-${index}`">Gênero</label><select :id="`actor-gender-${index}`" v-model="actor.gender"><option value="unknown">Não identificado</option><option value="male">Masculino</option><option value="female">Feminino</option><option value="neutral">Neutro</option></select></div>

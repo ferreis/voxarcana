@@ -2,7 +2,7 @@ import json
 import logging
 from pathlib import Path
 from uuid import uuid4, UUID
-from typing import Literal
+from typing import Annotated, Literal
 
 import soundfile as sf
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
@@ -261,6 +261,7 @@ class CharacterRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     gender: Literal['male', 'female', 'neutral', 'unknown'] = 'unknown'
     voice_id: str = Field(min_length=1, max_length=80)
+    aliases: list[Annotated[str, Field(min_length=1, max_length=80)]] | None = Field(default=None, max_length=20)
 
     @field_validator('name')
     @classmethod
@@ -280,7 +281,7 @@ def characters():
 def edit_character(record_id: str, request: CharacterRequest):
     from .characters import update_character
     try:
-        return update_character(record_id, request.name, request.gender, request.voice_id, voice_catalog())
+        return update_character(record_id, request.name, request.gender, request.voice_id, voice_catalog(), aliases=request.aliases)
     except LookupError as error:
         raise HTTPException(404, str(error)) from error
     except ValueError as error:

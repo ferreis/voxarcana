@@ -45,7 +45,7 @@ export const studioApi = {
     return response.blob()
   },
   characters: () => request<SavedCharacter[]>('/v1/characters'),
-  updateCharacter: (id: string, data: { name: string; gender: string; voice_id: string }) => request<SavedCharacter>(`/v1/characters/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+  updateCharacter: (id: string, character: { name: string; gender: string; voice_id: string; aliases?: string[] }) => request<SavedCharacter>(`/v1/characters/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(character) }),
   engine: () => request<Engine>('/v1/engine'),
   voices: () => request<Voice[]>('/v1/voices'),
   styles: () => request<Style[]>('/v1/styles'),

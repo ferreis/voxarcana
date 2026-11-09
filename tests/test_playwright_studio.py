@@ -65,6 +65,7 @@ class StudioBrowserTests(unittest.TestCase):
                            "reference_audio": True, "voice_description": False, "locale": "pt-BR"},
             "/v1/voices": voice_items,
             "/v1/styles": [{"id": "neutral", "name": "Neutro"}],
+            "/v1/characters": [],
         }
         for endpoint, response in responses.items():
             page.route(f"**{endpoint}", lambda route, request, payload=response:
@@ -72,7 +73,7 @@ class StudioBrowserTests(unittest.TestCase):
         page.goto(self.url, wait_until="networkidle")
         return page
 
-    def mock_analysis(self, page, dialogue=False, saved_voice=False):
+    def mock_analysis(self, page, dialogue=False, saved_voice=False, second_character=False):
         source_text = 'A noite chegou. "Olá!"' if dialogue else 'A noite chegou.'
         segments = [{"id": 0, "kind": "narration", "text": "A noite chegou.",
                      "speaker": "Narrador", "gender": "unknown", "delivery": "neutral"}]
@@ -81,6 +82,9 @@ class StudioBrowserTests(unittest.TestCase):
                              "gender": "female", "delivery": "neutral",
                              "voice_id": "actor-1" if saved_voice else "",
                              "character_saved": saved_voice})
+        if second_character:
+            segments.append({"id": 2, "kind": "dialogue", "text": "Volte!", "speaker": "Bia",
+                             "gender": "female", "delivery": "neutral", "voice_id": ""})
         job_response = {"id": "analysis-test", "status": "review", "stage": "review",
                         "completed": 0, "total": 0, "error": None, "source_text": source_text,
                         "analysis_percent": 100, "scene": {"method": "test", "warning": None, "segments": segments}}
@@ -169,6 +173,78 @@ class StudioBrowserTests(unittest.TestCase):
             expect(generate_button).to_be_disabled()
             expect(page.get_by_text("O texto mudou. Clique em Analisar novamente.")).to_be_visible()
             self.assertEqual(approvals, [])
+        finally:
+            page.close()
+
+    def test_vozes_usadas_ficam_ocultas_e_checkbox_permite_compartilhar(self):
+        page = self.open_studio(voices=[
+            {'id': 'narrator-1', 'name': 'Narrador', 'role': 'narrator', 'gender': 'neutral'},
+            {'id': 'actor-1', 'name': 'Carla', 'role': 'character', 'gender': 'female'},
+            {'id': 'actor-2', 'name': 'Sulamita', 'role': 'character', 'gender': 'female'},
+            {'id': 'actor-3', 'name': 'Bruna', 'role': 'character', 'gender': 'female'},
+        ])
+        page.route('**/v1/characters', lambda route: route.fulfill(status=200,
+            content_type='application/json', body=json.dumps([
+                {'id': 'outra', 'name': 'Outra personagem', 'gender': 'female',
+                 'voice_id': 'actor-3', 'aliases': [], 'available': True, 'voice_name': 'Bruna'}])))
+        try:
+            approvals = self.mock_analysis(page, dialogue=True, second_character=True)
+            first_voice = page.locator('#actor-voice-0')
+            second_voice = page.locator('#actor-voice-1')
+            expect(first_voice.locator('option[value="actor-3"]')).to_have_count(0)
+            first_voice.select_option('actor-1')
+            expect(second_voice.locator('option[value="actor-1"]')).to_have_count(0)
+            second_voice.select_option('actor-2')
+            generate_button = page.get_by_role('button', name='Gerar áudio', exact=True)
+            expect(generate_button).to_be_enabled()
+            reuse_checkbox = page.get_by_role('checkbox', name='Usar voz já utilizada', exact=True)
+            reuse_checkbox.check()
+            expect(second_voice.locator('option[value="actor-1"]')).to_have_count(1)
+            expect(second_voice.locator('option[value="actor-3"]')).to_have_count(1)
+            second_voice.select_option('actor-1')
+            expect(generate_button).to_be_enabled()
+            reuse_checkbox.uncheck()
+            expect(first_voice).to_have_value('actor-1')
+            expect(second_voice).to_have_value('')
+            expect(generate_button).to_be_disabled()
+            reuse_checkbox.check()
+            second_voice.select_option('actor-1')
+            generate_button.click()
+            self.assertEqual([line['voice_id'] for line in approvals[0]['lines']], ['actor-1', 'actor-1'])
+        finally:
+            page.close()
+
+    def test_elenco_salva_apelidos_e_filtra_voz_de_outro_personagem(self):
+        page = self.open_studio(voices=[
+            {'id': 'narrator-1', 'name': 'Narrador', 'role': 'narrator'},
+            {'id': 'actor-1', 'name': 'Leo', 'role': 'character'},
+            {'id': 'actor-2', 'name': 'Carla', 'role': 'character'},
+        ])
+        characters = [
+            {'id': 'lucasalmeida', 'name': 'Lucas Almeida', 'gender': 'male', 'voice_id': 'actor-1', 'aliases': [], 'voice_name': 'Leo', 'available': True},
+            {'id': 'lia', 'name': 'Lia', 'gender': 'female', 'voice_id': 'actor-2', 'aliases': [], 'voice_name': 'Carla', 'available': True},
+        ]
+        edits = []
+        page.route('**/v1/characters', lambda route: route.fulfill(status=200,
+            content_type='application/json', body=json.dumps(characters)))
+
+        def save_aliases(route):
+            changes = route.request.post_data_json
+            edits.append(changes)
+            route.fulfill(status=200, content_type='application/json', body=json.dumps({**characters[0], **changes}))
+
+        page.route('**/v1/characters/lucasalmeida', save_aliases)
+        try:
+            page.get_by_role('button', name='Elenco salvo · personagens e vozes').click()
+            page.locator('#saved-character').select_option('lucasalmeida')
+            expect(page.locator('#saved-character-voice option[value="actor-2"]')).to_have_count(0)
+            page.get_by_role('checkbox', name='Usar voz já utilizada', exact=True).check()
+            expect(page.locator('#saved-character-voice option[value="actor-2"]')).to_have_count(1)
+            page.locator('#saved-character-aliases').fill('Almeida, Corvo')
+            page.get_by_role('button', name='Salvar personagem', exact=True).click()
+            expect(page.get_by_text('Personagem salvo. Analise novamente o texto para aplicar os vínculos à cena.')).to_be_visible()
+            self.assertEqual(edits[0]['aliases'], ['Almeida', 'Corvo'])
+            self.assertEqual(edits[0]['voice_id'], 'actor-1')
         finally:
             page.close()
 
