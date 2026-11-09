@@ -126,8 +126,8 @@ class JobQueue:
             job = self.jobs.get(job_id)
             if job is None:
                 raise LookupError('Análise não encontrada. Analise o texto novamente.')
-            if job.status != 'review':
-                raise ValueError('Essa análise não está aguardando revisão.')
+            if job.status not in {'review', 'done'} or job.review_scene is None or job.review_payload is None:
+                raise ValueError('Essa análise não está disponível para revisar ou gerar novamente.')
             if sum(j.status in {'queued', 'running', 'cancelling'} for j in self.jobs.values()) >= 3:
                 raise ValueError('A fila está cheia. Aguarde antes de gerar.')
             voices = {v['id']: v for v in catalog}
@@ -160,6 +160,12 @@ class JobQueue:
                        'speed': speed if speed is not None else job.review_payload.get('speed', 1.0)}
             job.status = 'queued'
             job.stage = 'queued'
+            job.audio = None
+            job.error = None
+            job.completed = 0
+            job.total = 0
+            job.speaker = None
+            job.delivery = None
             job.scene = scene.public()
             self.pool.submit(self._run, job, payload)
             return job

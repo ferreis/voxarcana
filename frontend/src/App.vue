@@ -14,7 +14,7 @@ import ReferenceDialog from './components/ReferenceDialog.vue'
 import { useStudio } from './composables/useStudio'
 useExclusiveAudio()
 const studio = useStudio()
-const { text, title, voice, style, speed, voices, engine, connected, busy, job, narrationOnly, error,
+const { text, title, voice, style, speed, voices, engine, connected, busy, canPerform, job, narrationOnly, error,
   notice, audioUrl, audioTitle, elapsed, words, selectedVoice, status } = studio
 const referenceDialog = ref<InstanceType<typeof ReferenceDialog> | null>(null)
 const characterDialog = ref<InstanceType<typeof CharacterLibraryDialog> | null>(null)
@@ -27,9 +27,7 @@ const reviewedLines = ref<ReviewedLine[] | null>(null)
 const audioStarted = computed(() => !!job.value && (narrationOnly.value || !!job.value.scene) && job.value.status !== 'review')
 const canStart = computed(() => !busy.value && connected.value && engine.value?.id === 'chatterbox-br'
   && engine.value.installed && !!voice.value && !!text.value.trim())
-const canGenerate = computed(() => !busy.value && connected.value && !!voice.value
-  && job.value?.status === 'review' && job.value.source_text === text.value.trim()
-  && reviewedLines.value !== null)
+const canGenerate = computed(() => canPerform.value && reviewedLines.value !== null)
 watch(() => job.value?.id, () => { reviewedLines.value = null }, { flush: 'sync' })
 function generateAudio() {
   if (canGenerate.value && reviewedLines.value !== null) void studio.perform(reviewedLines.value)
@@ -71,7 +69,7 @@ function example() {
           </aside>
         </div>
         <GenerationControls :can-start="canStart" :can-generate="canGenerate" :busy="busy" :narration-only="narrationOnly" :audio-started="audioStarted" :has-scene="!!job?.scene" :reviewing="job?.status === 'review'" :done="job?.status === 'done'" :cancelling="job?.status === 'cancelling'" :can-cancel="!!job" :status="status" :elapsed-label="elapsedLabel" @narrate="studio.narrate" @analyze="studio.analyze" @generate="generateAudio" @cancel="studio.cancel" />
-        <CastReview v-if="job?.status === 'review' && job.scene" :key="job.id" :scene="job.scene" :voices="voices" :narrator="voice" :disabled="busy" :stale="job.source_text !== text.trim()" @change="reviewedLines = $event" />
+        <CastReview v-if="!narrationOnly && job?.scene && job.source_text != null" :key="job.id" :scene="job.scene" :voices="voices" :narrator="voice" :disabled="busy" :stale="job.source_text !== text.trim()" @change="reviewedLines = $event" />
         <p v-if="job?.scene?.warning" class="analysis-notice" role="status">{{ job.scene.warning }}</p>
         <ScenePreview v-if="job?.scene?.segments.length" :scene="job.scene" :narrator-name="selectedVoice?.name" :voices="voices" />
         <GenerationProgress v-if="job" :job="job" :narration-only="narrationOnly" />

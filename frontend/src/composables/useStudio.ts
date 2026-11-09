@@ -31,6 +31,9 @@ export function useStudio() {
   let unmounted = false
   const controller = new AbortController()
   const busy = computed(() => submitting.value || !!job.value && ['queued', 'running', 'cancelling'].includes(job.value.status))
+  const canPerform = computed(() => !busy.value && connected.value && !!voice.value && !narrationOnly.value
+    && !!job.value?.scene && ['review', 'done'].includes(job.value.status)
+    && job.value.source_text === text.value.trim())
   const words = computed(() => text.value.trim().split(/\s+/).filter(Boolean).length)
   const selectedVoice = computed(() => voices.value.find(item => item.id === voice.value))
   const status = computed(() => {
@@ -130,12 +133,13 @@ export function useStudio() {
   function analyze() { return startGeneration(true) }
   function narrate() { return startGeneration(false) }
   async function perform(lines: ReviewedLine[]) {
-    if (busy.value || !job.value || job.value.status !== 'review') return
+    if (busy.value || !job.value) return
     if (job.value.source_text !== text.value.trim()) { error.value = 'O texto mudou. Analise novamente antes de gerar.'; return }
+    if (!canPerform.value) return
     submitting.value = true; error.value = ''; startedAt = Date.now(); elapsed.value = 0
     try {
       const result = await studioApi.perform(job.value.id, voice.value, style.value, lines, speed.value)
-      job.value = { ...job.value, status: 'queued', stage: 'queued' }
+      job.value = { ...job.value, status: 'queued', stage: 'queued', completed: 0, total: 0, error: null }
       await poll(result.id)
     } catch (problem) { error.value = problem instanceof Error ? problem.message : 'Não consegui iniciar o áudio.' }
     finally { submitting.value = false }
@@ -174,7 +178,7 @@ export function useStudio() {
     controller.abort()
     if (audioUrl.value) URL.revokeObjectURL(audioUrl.value)
   })
-  return { text, title, voice, style, speed, voices, styles, engine, connected, checking, busy,
+  return { text, title, voice, style, speed, voices, styles, engine, connected, checking, busy, canPerform,
     job, narrationOnly, error, notice, audioUrl, audioTitle, elapsed, words, selectedVoice, status,
     analyze, narrate, perform, cancel, reconnect, addReference, updateVoice, deleteVoice }
 }

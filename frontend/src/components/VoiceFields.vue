@@ -3,6 +3,7 @@ import { useId } from 'vue'
 const prefix = useId()
 import type { VoiceMetadata } from '../services/studio'
 const model = defineModel<VoiceMetadata>({ required: true })
+withDefaults(defineProps<{ showHelp?: boolean }>(), { showHelp: true })
 </script>
 <template>
   <div class="voice-fields">
@@ -10,5 +11,5 @@ const model = defineModel<VoiceMetadata>({ required: true })
     <div><label :for="`${prefix}-gender`">Gênero da voz</label><select :id="`${prefix}-gender`" v-model="model.gender"><option value="unknown">Ainda não classificada</option><option value="male">Masculina</option><option value="female">Feminina</option><option value="neutral">Neutra · sem gênero</option></select></div>
     <div><label :for="`${prefix}-kind`">Tipo de voz</label><select :id="`${prefix}-kind`" v-model="model.kind"><option value="human">Humana</option><option value="robot">Robótica</option><option value="entity">Criatura ou entidade</option></select></div>
   </div>
-  <p class="field-help">Neutra significa sem gênero definido. Robótica é um tipo de voz separado. A classificação orienta a escolha; o timbre vem da gravação. A voz selecionada como narrador não participa do elenco de personagens dessa cena, mesmo marcada como Ambos.</p>
+  <p v-if="showHelp" class="field-help">Neutra significa sem gênero definido. Robótica é um tipo de voz separado. A classificação orienta a escolha; o timbre vem da gravação. A voz selecionada como narrador não participa do elenco de personagens dessa cena, mesmo marcada como Ambos.</p>
 </template>

@@ -248,6 +248,126 @@ class StudioBrowserTests(unittest.TestCase):
         finally:
             page.close()
 
+    def test_adiciona_personagem_salvo_remove_da_cena_e_preserva_falas(self):
+        page = self.open_studio(voices=[
+            {'id': 'narrator-1', 'name': 'Narrador', 'role': 'narrator', 'gender': 'neutral'},
+            {'id': 'actor-1', 'name': 'Carla', 'role': 'character', 'gender': 'female'},
+            {'id': 'actor-2', 'name': 'Leo', 'role': 'character', 'gender': 'male'},
+        ])
+        saved_character = {'id': 'garrin', 'name': 'Garrin', 'gender': 'male', 'voice_id': 'actor-2',
+                           'aliases': ['Ferreiro'], 'voice_name': 'Leo', 'available': True}
+        page.route('**/v1/characters', lambda route: route.fulfill(status=200,
+            content_type='application/json', body=json.dumps([saved_character])))
+        character_mutations = []
+        page.on('request', lambda request: character_mutations.append(request.url)
+                if '/v1/characters' in request.url and request.method != 'GET' else None)
+        try:
+            approvals = self.mock_analysis(page, dialogue=True)
+            page.locator('#actor-voice-0').select_option('actor-1')
+            generate_button = page.get_by_role('button', name='Gerar áudio', exact=True)
+            expect(generate_button).to_be_enabled()
+            saved_picker = page.locator('#scene-saved-character')
+            saved_picker.select_option('garrin')
+            page.get_by_role('button', name='Adicionar à cena', exact=True).click()
+            expect(page.locator('#actor-name-1')).to_have_value('Garrin')
+            expect(page.locator('#actor-gender-1')).to_have_value('male')
+            expect(page.locator('#actor-voice-1')).to_have_value('actor-2')
+            expect(saved_picker.locator('option[value="garrin"]')).to_have_count(0)
+            page.get_by_role('button', name='Remover Garrin da cena', exact=True).click()
+            expect(page.locator('.actor-row')).to_have_count(1)
+            expect(generate_button).to_be_enabled()
+            expect(saved_picker.locator('option[value="garrin"]')).to_have_count(1)
+            saved_picker.select_option('garrin')
+            page.get_by_role('button', name='Adicionar à cena', exact=True).click()
+            page.get_by_role('button', name='Remover Lia da cena', exact=True).click()
+            expect(page.locator('.actor-row')).to_have_count(1)
+            expect(page.locator('.review-lines')).to_have_attribute('open', '')
+            expect(page.get_by_text('1 fala sem personagem. Escolha quem fala antes de gerar o áudio.')).to_be_visible()
+            expect(generate_button).to_be_disabled()
+            expect(page.locator('#line-speaker-1')).to_have_value('')
+            expect(page.locator('.review-line p')).to_have_text('Olá!')
+            page.locator('#line-speaker-1').select_option(label='Garrin')
+            expect(generate_button).to_be_enabled()
+            generate_button.click()
+            self.assertEqual(approvals[0]['lines'], [{'id': 1, 'speaker': 'Garrin', 'gender': 'male', 'voice_id': 'actor-2'}])
+            self.assertEqual(character_mutations, [])
+        finally:
+            page.close()
+
+    def test_remove_ultimo_personagem_e_permite_criar_substituto(self):
+        page = self.open_studio(voices=[
+            {'id': 'narrator-1', 'name': 'Narrador', 'role': 'narrator', 'gender': 'neutral'},
+            {'id': 'actor-1', 'name': 'Carla', 'role': 'character', 'gender': 'female'},
+        ])
+        try:
+            self.mock_analysis(page, dialogue=True)
+            page.get_by_role('button', name='Remover Lia da cena', exact=True).click()
+            expect(page.locator('.actor-row')).to_have_count(0)
+            expect(page.get_by_role('button', name='Gerar áudio', exact=True)).to_be_disabled()
+            expect(page.get_by_text('Adicione um personagem e atribua as falas abaixo.')).to_be_visible()
+            page.get_by_role('button', name='Novo personagem', exact=True).click()
+            page.locator('#actor-name-0').fill('Brigitte')
+            page.locator('#actor-voice-0').select_option('actor-1')
+            page.locator('#line-speaker-1').select_option(label='Brigitte')
+            expect(page.get_by_role('button', name='Gerar áudio', exact=True)).to_be_enabled()
+            for viewport_width in [390, 768, 1440]:
+                page.set_viewport_size({'width': viewport_width, 'height': 1000})
+                self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'))
+                page.screenshot(path=f'/tmp/voxarcana-cast-edit-{viewport_width}.png', full_page=True)
+        finally:
+            page.close()
+
+    def test_troca_narrador_e_gera_novamente_sem_reanalisar_nem_perder_correcao(self):
+        page = self.open_studio(voices=[
+            {'id': 'narrator-1', 'name': 'Narrador anterior', 'role': 'narrator', 'gender': 'male'},
+            {'id': 'narrator-2', 'name': 'Narrador correto', 'role': 'narrator', 'gender': 'male'},
+            {'id': 'actor-1', 'name': 'Carla', 'role': 'character', 'gender': 'female'},
+        ])
+        analysis_requests = []
+        page.on('request', lambda request: analysis_requests.append(request.url)
+                if request.url.endswith('/v1/jobs') and request.method == 'POST' else None)
+        audio_buffer = BytesIO()
+        with wave.open(audio_buffer, 'wb') as recording:
+            recording.setnchannels(1)
+            recording.setsampwidth(2)
+            recording.setframerate(24000)
+            recording.writeframes(b'\x00\x01' * 24000)
+        try:
+            approvals = self.mock_analysis(page, dialogue=True, saved_voice=True)
+            page.locator('#actor-name-0').fill('Lise')
+            completed_job = {'id': 'analysis-test', 'status': 'done', 'completed': 2, 'total': 2,
+                'error': None, 'source_text': 'A noite chegou. "Olá!"', 'analysis_percent': 100,
+                'scene': {'method': 'test', 'warning': None, 'segments': [
+                    {'id': 0, 'kind': 'narration', 'text': 'A noite chegou.', 'speaker': 'Narrador', 'gender': 'unknown', 'delivery': 'neutral'},
+                    {'id': 1, 'kind': 'dialogue', 'text': 'Olá!', 'speaker': 'Lise', 'gender': 'female', 'delivery': 'neutral', 'voice_id': 'actor-1'}]}}
+            page.route('**/v1/jobs/analysis-test', lambda route: route.fulfill(
+                status=200, content_type='application/json', body=json.dumps(completed_job)))
+            page.route('**/v1/jobs/analysis-test/audio', lambda route: route.fulfill(
+                status=200, content_type='audio/wav', body=audio_buffer.getvalue()))
+            generate_button = page.get_by_role('button', name='Gerar áudio', exact=True)
+            generate_button.click()
+            expect(page.get_by_role('button', name='Reproduzir narração', exact=True)).to_be_enabled()
+            expect(page.locator('#actor-name-0')).to_have_value('Lise')
+            page.locator('#voice').select_option('narrator-2')
+            expect(generate_button).to_be_enabled()
+            expect(page.locator('#actor-voice-0')).to_have_value('actor-1')
+            generate_button.click()
+            expect(generate_button).to_be_enabled()
+            self.assertEqual(len(analysis_requests), 1)
+            self.assertEqual(len(approvals), 2)
+            self.assertEqual(approvals[0]['voice'], 'narrator-1')
+            self.assertEqual(approvals[1]['voice'], 'narrator-2')
+            self.assertEqual(approvals[0]['lines'], approvals[1]['lines'])
+            self.assertEqual(approvals[1]['lines'][0]['speaker'], 'Lise')
+            page.reload(wait_until='networkidle')
+            expect(page.locator('#actor-name-0')).to_have_value('Lise')
+            expect(generate_button).to_be_enabled()
+            page.locator('#narration-text').fill('Outro texto.')
+            expect(generate_button).to_be_disabled()
+            expect(page.get_by_text('O texto mudou. Clique em Analisar novamente.')).to_be_visible()
+        finally:
+            page.close()
+
     def test_elenco_salvo_aguarda_confirmacao_e_layout_adapta(self):
         page = self.open_studio(voices=[
             {"id": "narrator-1", "name": "Narrador", "role": "narrator", "gender": "neutral"},
@@ -338,9 +458,16 @@ class StudioBrowserTests(unittest.TestCase):
                 page.set_viewport_size({'width': viewport_width, 'height': 1000})
                 self.assertTrue(page.locator('.reference-dialog[open]').evaluate(
                     'dialog => dialog.scrollWidth <= dialog.clientWidth'))
+                if viewport_width >= 768:
+                    profile_bounds = page.locator('.voice-profile').bounding_box()
+                    source_bounds = page.locator('.voice-source').bounding_box()
+                    self.assertLess(profile_bounds['x'], source_bounds['x'])
+                    self.assertAlmostEqual(profile_bounds['y'], source_bounds['y'], delta=1)
+                    self.assertTrue(page.locator('.voice-import-dialog').evaluate(
+                        'dialog => dialog.scrollHeight <= dialog.clientHeight'))
                 page.screenshot(path=f'/tmp/voxarcana-youtube-{viewport_width}.png', full_page=True)
             page.locator('#reference-name').fill('Voz do trecho')
-            page.get_by_role('button', name='Adicionar à minha mesa').click()
+            page.get_by_role('button', name='Adicionar voz', exact=True).click()
             expect(page.get_by_role('dialog')).not_to_be_visible()
             self.assertEqual(len(voice_uploads), 1)
             self.assertIn(b'youtube-80s-30s.wav', voice_uploads[0])

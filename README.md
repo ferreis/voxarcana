@@ -31,6 +31,8 @@ Para reiniciar os serviços locais e o analisador Ollama usando o script de dese
 
 A análise sempre aguarda essa confirmação, inclusive em cenas com apenas narrador ou com personagens já salvos. Se alterar o texto, analise novamente antes de gerar.
 
+Depois de gerar, a revisão continua disponível. Trocar o narrador, ajustar as vozes dos personagens ou alterar o estilo e a velocidade permite clicar novamente em **Gerar áudio**, reutilizando a análise e as correções. Uma nova análise só é necessária ao mudar o texto ou se o trabalho anterior não estiver mais disponível no servidor.
+
 A biblioteca permite classificar vozes como narrador, personagem ou ambos. O elenco pode memorizar escolhas para cenas futuras. Há controle de velocidade do arquivo exportado e nivelamento de volume por trecho. O ajuste de velocidade e a normalização dependem do FFmpeg.
 
 No **Elenco salvo**, use **Apelidos e sobrenomes** para vincular outras formas de chamar um personagem ao nome principal: por exemplo, `Lucas Almeida` pode ter `Almeida, Corvo`. Depois de salvar, analise novamente o texto. Esses nomes passam a usar a mesma identidade, gênero e voz; nomes já vinculados a outro personagem são recusados. As opções de voz ocultam as escolhas de outros personagens da cena e do elenco salvo. Marque **Usar voz já utilizada** para permitir compartilhar uma voz, mantendo as restrições de gênero e de voz do narrador.

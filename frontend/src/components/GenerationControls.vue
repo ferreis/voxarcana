@@ -24,7 +24,7 @@ const narratorLabel = computed(() => props.busy && props.narrationOnly ? 'Gerand
 const statusLabel = computed(() => props.busy ? 'Em andamento' : props.done ? 'Áudio pronto' : props.reviewing ? 'Revisar vozes' : 'Estúdio')
 const guidance = computed(() => props.busy ? `${props.elapsedLabel} decorridos`
   : props.reviewing ? 'Confira o elenco abaixo e clique em Gerar áudio.'
-    : props.done ? 'Ouça ou baixe a narração no player do topo.'
+    : props.done ? 'Ouça no player do topo. Você pode trocar o narrador ou corrigir as vozes e gerar novamente.'
       : 'Use só o narrador ou analise o texto para definir as vozes dos personagens.')
 </script>
 
