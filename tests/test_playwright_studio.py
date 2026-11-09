@@ -109,13 +109,11 @@ class StudioBrowserTests(unittest.TestCase):
             approvals = self.mock_analysis(page)
             expect(generate_button).to_be_enabled()
             self.assertEqual(approvals, [])
-            self.assertEqual(page.locator('[aria-current="step"]').inner_text().splitlines()[0], "1")
             generate_button.click()
             expect(page.get_by_role("button", name="Gerando áudio…")).to_be_visible()
             self.assertEqual(len(approvals), 1)
             self.assertEqual(approvals[0]["lines"], [])
             self.assertEqual(approvals[0]["voice"], "narrator-1")
-            self.assertEqual(page.locator('[aria-current="step"]').inner_text().splitlines()[0], "2")
         finally:
             page.close()
 

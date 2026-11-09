@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { AudioLines, BookOpen, CircleHelp, FileText, LoaderCircle, Mic2, ShieldCheck, Sparkles, Square, SlidersHorizontal, UsersRound } from 'lucide-vue-next'
+import { AudioLines, BookOpen, CircleHelp, FileText, LoaderCircle, Mic2, Sparkles, Square, SlidersHorizontal, UsersRound } from 'lucide-vue-next'
 import CharacterLibraryDialog from './components/CharacterLibraryDialog.vue'
 import CastReview from './components/CastReview.vue'
 import AudioGenerationStep from './components/AudioGenerationStep.vue'
@@ -54,10 +54,6 @@ function example() {
         <section v-if="showHelp" class="help-strip"><BookOpen :size="22" /><div><strong>Da sua imaginação para a mesa.</strong><p>Para usar apenas a voz do narrador, clique em Gerar só com narrador. Para separar as falas dos personagens, clique em Analisar texto e escolher vozes. Confira os personagens, corrija nomes e gênero e escolha uma voz para cada um antes de gerar. Depois, ouça ou baixe o WAV. Para outro timbre de narrador, adicione uma gravação brasileira de referência. Você não precisa cadastrar os personagens nem descrever suas emoções. Tudo é gerado neste computador, sem assinatura.</p></div><button class="text-button" @click="showHelp = false">Entendi</button></section>
         <div v-if="error" class="error-message error-banner" role="alert"><span>{{ error }}</span><button v-if="!connected || notice" class="text-button" @click="studio.reconnect">Reconectar</button></div>
         <p v-if="notice" class="muted small" role="status">{{ notice }}</p>
-        <ol class="workflow-steps" aria-label="Etapas da narração">
-          <li :class="{ 'current-step': !audioStarted }" :aria-current="!audioStarted ? 'step' : undefined"><span class="step-number">1</span><div><strong>{{ narrationOnly ? 'Conferir texto e narrador' : 'Analisar texto e escolher vozes' }}</strong><small>{{ narrationOnly ? 'Todo o texto usa a voz selecionada do narrador.' : 'Confira o narrador e as falas dos personagens.' }}</small></div></li>
-          <li :class="{ 'current-step': audioStarted }" :aria-current="audioStarted ? 'step' : undefined"><span class="step-number">2</span><div><strong>Gerar áudio</strong><small>{{ narrationOnly ? 'Geração direta, sem interpretação pela IA.' : 'Confirme as vozes para iniciar a narração.' }}</small></div></li>
-        </ol>
         <div class="studio-layout">
           <section class="editor-section" aria-label="Texto da narração">
             <div class="section-heading editor-actions"><button class="text-button" :disabled="busy" @click="example"><Sparkles :size="14" /> Carregar exemplo</button></div>
@@ -66,7 +62,6 @@ function example() {
               <label class="sr-only" for="narration-text">Texto para narrar</label><textarea id="narration-text" v-model="text" maxlength="10000" placeholder="Toda aventura começa com algumas palavras…&#10;&#10;Cole ou escreva a cena que você quer narrar. Um encontro na taverna, uma carta misteriosa, o monólogo de um personagem. A história é sua." spellcheck="true" lang="pt-BR"></textarea>
               <div class="editor-footer"><span>{{ words.toLocaleString('pt-BR') }} palavras</span><span>{{ text.length.toLocaleString('pt-BR') }} <span class="muted">/ 10.000 caracteres</span></span></div>
             </div>
-            <div class="editor-note"><ShieldCheck :size="14" /><p>Seu texto fica neste computador. Sem créditos, sem mensalidade.</p></div>
           </section>
           <aside class="voice-panel" aria-label="Configurar narração">
             <div class="voice-identity"><span class="voice-orb" aria-hidden="true"><AudioLines :size="30" /></span><span class="voice-overline">FEITO PARA PT-BR</span></div>
