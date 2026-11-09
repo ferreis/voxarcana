@@ -182,9 +182,21 @@ class StudioBrowserTests(unittest.TestCase):
             generate_button = page.get_by_role("button", name="Gerar áudio", exact=True)
             expect(generate_button).to_be_enabled()
             self.assertEqual(page.locator("#actor-voice-0").input_value(), "actor-1")
+            page.locator('.scene-preview > summary').click()
+            expect(page.get_by_role('list', name='Trechos da cena interpretada')).to_be_visible()
             for viewport_width in [390, 768, 1024, 1440, 1920]:
                 page.set_viewport_size({"width": viewport_width, "height": 1000})
                 self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
+                action_buttons = page.locator('.generation-options > button')
+                self.assertEqual(action_buttons.count(), 3)
+                button_positions = [action_buttons.nth(button_index).bounding_box() for button_index in range(3)]
+                self.assertAlmostEqual(button_positions[0]['y'], button_positions[1]['y'], delta=1)
+                self.assertAlmostEqual(button_positions[1]['y'], button_positions[2]['y'], delta=1)
+                self.assertLess(button_positions[0]['x'], button_positions[1]['x'])
+                self.assertLess(button_positions[1]['x'], button_positions[2]['x'])
+                progress_phases = page.locator('.progress-phase')
+                if viewport_width >= 768:
+                    self.assertAlmostEqual(progress_phases.nth(0).bounding_box()['y'], progress_phases.nth(1).bounding_box()['y'], delta=1)
                 page.screenshot(path=f"/tmp/voxarcana-steps-{viewport_width}.png", full_page=True)
             self.assertEqual(approvals, [])
             generate_button.click()

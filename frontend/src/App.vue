@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { AudioLines, BookOpen, CircleHelp, FileText, LoaderCircle, Mic2, Sparkles, Square, SlidersHorizontal, UsersRound } from 'lucide-vue-next'
+import { AudioLines, BookOpen, CircleHelp, FileText, Mic2, Sparkles, SlidersHorizontal, UsersRound } from 'lucide-vue-next'
 import CharacterLibraryDialog from './components/CharacterLibraryDialog.vue'
 import CastReview from './components/CastReview.vue'
-import AudioGenerationStep from './components/AudioGenerationStep.vue'
+import GenerationControls from './components/GenerationControls.vue'
 import type { ReviewedLine } from './services/studio'
 import { useExclusiveAudio } from './composables/useExclusiveAudio'
 import GenerationProgress from './components/GenerationProgress.vue'
+import ScenePreview from './components/ScenePreview.vue'
 import AudioPlayer from './components/AudioPlayer.vue'
 import VoiceLibraryDialog from './components/VoiceLibraryDialog.vue'
 import ReferenceDialog from './components/ReferenceDialog.vue'
@@ -19,10 +20,8 @@ const referenceDialog = ref<InstanceType<typeof ReferenceDialog> | null>(null)
 const characterDialog = ref<InstanceType<typeof CharacterLibraryDialog> | null>(null)
 const libraryDialog = ref<InstanceType<typeof VoiceLibraryDialog> | null>(null)
 const narratorVoices = computed(() => voices.value.filter(item => item.role !== 'character'))
-const voiceName = (id?: string) => voices.value.find(v => v.id === id)?.name || 'Voz a definir'
 const showHelp = ref(false)
 const cast = computed(() => [...new Set(job.value?.scene?.segments.filter(segment => segment.kind === 'dialogue').map(segment => segment.speaker) || [])])
-const deliveryNames: Record<string, string> = { neutral: 'Natural', warm: 'Afetuoso', playful: 'Bem-humorado', firm: 'Firme', urgent: 'Urgente', soft: 'Baixo e íntimo', sad: 'Vulnerável', tense: 'Tenso', angry: 'Irritado', fear: 'Ansioso' }
 const elapsedLabel = computed(() => `${Math.floor(elapsed.value / 60)}:${String(elapsed.value % 60).padStart(2, '0')}`)
 const reviewedLines = ref<ReviewedLine[] | null>(null)
 const audioStarted = computed(() => !!job.value && (narrationOnly.value || !!job.value.scene) && job.value.status !== 'review')
@@ -71,21 +70,10 @@ function example() {
             <div v-if="cast.length" class="cast-list" aria-label="Personagens identificados"><span v-for="name in cast" :key="name">{{ name }}</span></div>
           </aside>
         </div>
-        <div class="generation-bar">
-          <div class="generation-status" role="status" aria-live="polite">
-            <span class="status-icon"><LoaderCircle v-if="busy && (!audioStarted || narrationOnly)" :size="20" class="spin" /><FileText v-else :size="20" /></span>
-            <div><strong>{{ audioStarted && !narrationOnly ? 'Análise concluída.' : status }}</strong><span v-if="busy && (!audioStarted || narrationOnly)">{{ elapsedLabel }} decorridos</span><span v-else>Gerar só com narrador usa uma única voz, sem interpretar o texto pela IA.</span></div>
-          </div>
-          <div class="generation-actions">
-            <button v-if="busy && (!audioStarted || narrationOnly)" class="secondary-button" :disabled="job?.status === 'cancelling' || !job" @click="studio.cancel"><Square :size="14" /> Cancelar</button>
-            <button class="secondary-button" :disabled="!canStart" @click="studio.narrate"><AudioLines :size="18" />{{ busy && narrationOnly ? 'Gerando áudio…' : 'Gerar só com narrador' }}</button>
-            <button class="primary-button" :disabled="!canStart" @click="studio.analyze"><LoaderCircle v-if="busy && !audioStarted && !narrationOnly" :size="18" class="spin" /><FileText v-else :size="18" />{{ busy && !audioStarted && !narrationOnly ? 'Analisando texto…' : job?.scene ? 'Analisar novamente' : 'Analisar texto e escolher vozes' }}</button>
-          </div>
-        </div>
+        <GenerationControls :can-start="canStart" :can-generate="canGenerate" :busy="busy" :narration-only="narrationOnly" :audio-started="audioStarted" :has-scene="!!job?.scene" :reviewing="job?.status === 'review'" :done="job?.status === 'done'" :cancelling="job?.status === 'cancelling'" :can-cancel="!!job" :status="status" :elapsed-label="elapsedLabel" @narrate="studio.narrate" @analyze="studio.analyze" @generate="generateAudio" @cancel="studio.cancel" />
         <CastReview v-if="job?.status === 'review' && job.scene" :key="job.id" :scene="job.scene" :voices="voices" :narrator="voice" :disabled="busy" :stale="job.source_text !== text.trim()" @change="reviewedLines = $event" />
-        <AudioGenerationStep v-if="!narrationOnly" :ready="canGenerate" :active="audioStarted" :busy="busy" :cancelling="job?.status === 'cancelling'" :can-cancel="!!job" :status="status" :elapsed-label="elapsedLabel" @generate="generateAudio" @cancel="studio.cancel" />
         <p v-if="job?.scene?.warning" class="analysis-notice" role="status">{{ job.scene.warning }}</p>
-        <details v-if="job?.scene?.segments.length" class="scene-preview"><summary>Como a cena foi interpretada <span>{{ cast.length }} personagens</span></summary><ol><li v-for="segment in job.scene.segments" :key="segment.id"><div><strong>{{ segment.speaker }}</strong><span>{{ deliveryNames[segment.delivery] || 'Natural' }} · {{ segment.kind === 'narration' ? selectedVoice?.name : voiceName(segment.voice_id) }}</span></div><p>{{ segment.text }}</p></li></ol></details>
+        <ScenePreview v-if="job?.scene?.segments.length" :scene="job.scene" :narrator-name="selectedVoice?.name" :voices="voices" />
         <GenerationProgress v-if="job" :job="job" :narration-only="narrationOnly" />
       </main>
       <footer class="page-footer"><span>VoxArcana <span class="footer-star">✦</span> Histórias ganham vida quando encontram uma voz.</span><button class="text-button" @click="showHelp = !showHelp">Como funciona <CircleHelp :size="13" /></button></footer>

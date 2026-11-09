@@ -140,14 +140,6 @@ select { cursor: pointer; min-height: 42px; }
 .automatic-direction > p { font-size: 10px; color: #a2b297; line-height: 1.7; margin: 9px 0 16px; }
 .cast-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
 .cast-list > span { font-size: 10px; padding: 5px 8px; border: 1px solid #566448; border-radius: 20px; color: #d3c7a5; }
-.scene-preview { margin-top: 20px; border-top: 1px solid #37422f; padding-top: 15px; }
-.scene-preview summary { cursor: pointer; font-size: 12px; color: #ccb58b; }
-.scene-preview summary > span { float: right; color: #a3b498; font-size: 10px; }
-.scene-preview ol { list-style: none; padding: 0; margin: 18px 0 0; max-height: 340px; overflow-y: auto; }
-.scene-preview li { padding: 12px 15px; border-left: 1px solid #667452; margin-bottom: 12px; background: #18221a; }
-.scene-preview li > div { display: flex; align-items: center; gap: 13px; font-size: 11px; }
-.scene-preview li > div > span { color: #a3b195; font-size: 10px; }
-.scene-preview li p { font: 14px/1.7 var(--font-display); margin: 8px 0 0; }
 .analysis-notice { font-size: 11px; line-height: 1.6; color: #d6c29c; margin: 15px 0 0; }
 @media (max-width: 767px) { .automatic-direction { grid-column: 1/-1; } }
 
@@ -160,16 +152,6 @@ select { cursor: pointer; min-height: 42px; }
 
 .voice-panel > .text-button { justify-content: flex-start; margin: 4px 0 16px; }
 @media (max-width: 767px) { .voice-panel > .text-button { grid-column: 1/-1; } }
-.process-progress { margin-top: 22px; padding: 18px 0; border-top: 1px solid #30392d; color: #bbc5b2; font-size: 12px; }
-.analysis-progress summary, .audio-progress-label { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-.analysis-progress summary { cursor: pointer; list-style: none; }
-.process-progress small { display: block; margin-top: 5px; color: #8e9b83; font-size: 10px; }
-.process-progress strong { color: #d5bf8d; font-variant-numeric: tabular-nums; }
-.process-track { height: 5px; border-radius: 6px; background: #293426; overflow: hidden; margin: 12px 0 20px; }
-.process-track:last-child { margin-bottom: 0; }
-.process-track > span { display: block; height: 100%; background: #cdb789; transition: width .3s; }
-.analysis-log { line-height: 1.7; padding: 12px 0 3px; color: #a6b29c; }
-.analysis-log ol { padding-left: 20px; }
 .voice-delete { margin-top: 20px; border-top: 1px solid #3f4937; padding-top: 12px; }
 .danger-text { color: #eda398; }
 .danger-button { border: 1px solid #b7776d; color: #f3c8bf; background: #482d27; padding: 10px 14px; border-radius: 6px; margin-right: 12px; cursor: pointer; }
@@ -211,9 +193,6 @@ select { cursor: pointer; min-height: 42px; }
 .step-number { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border: 1px solid #566448; border-radius: 50%; color: #cdb58a; }
 .workflow-steps strong { display: block; font-size: 14px; line-height: 1.5; }
 .workflow-steps small { display: block; font-size: 12px; line-height: 1.6; color: #a6b29c; margin-top: 4px; }
-.audio-generation-step { border-top: 1px solid #3f4937; margin-top: 24px; padding-top: 24px; }
-.audio-generation-step > p { color: #a6b29c; font-size: 13px; line-height: 1.7; margin: 12px 0; }
-.audio-generation-step .generation-bar { border: 0; margin-top: 0; padding-top: 8px; }
 @media (max-width: 767px) { .workflow-steps { grid-template-columns: 1fr; gap: 16px; } .workflow-steps li { padding-bottom: 12px; } }
 
 .topbar { position: sticky; top: 0; z-index: 20; flex-shrink: 0; background: #18211b; border-bottom: 1px solid #394430; box-shadow: 0 5px 18px #0003; }

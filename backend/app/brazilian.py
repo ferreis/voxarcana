@@ -18,6 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / 'models/chatterbox-ptbr'
 SOURCE_DIR = ROOT / 'models/chatterbox-br-source/chatterbox/src/chatterbox'
 REFERENCE_DIR = ROOT / 'voices/references'
+# Upstream recommends zero CFG to reduce accent transfer from reference audio.
+# The dedicated Brazilian checkpoint uses the language token "pt", not "pt-BR".
+BRAZILIAN_LANGUAGE_ID = 'pt'
+BRAZILIAN_CFG_WEIGHT = 0.0
 logger = logging.getLogger('uvicorn.error')
 
 
@@ -152,9 +156,9 @@ class BrazilianEngine:
                     raise SpeechCancelled()
                 if progress:
                     progress(index, len(chunks))
-                wav = model.generate(chunk, language_id='pt',
+                wav = model.generate(chunk, language_id=BRAZILIAN_LANGUAGE_ID,
                                      audio_prompt_path=str(reference) if index == 0 else None,
-                                     exaggeration=expression, cfg_weight=0.5, temperature=0.65)
+                                     exaggeration=expression, cfg_weight=BRAZILIAN_CFG_WEIGHT, temperature=0.65)
                 if cancelled and cancelled():
                     raise SpeechCancelled()
                 if index:
@@ -199,8 +203,8 @@ class BrazilianEngine:
                 active_voice = unit.voice
             torch.manual_seed(unit.seed)
             with torch.inference_mode():
-                wav = model.generate(unit.text, language_id='pt', audio_prompt_path=prompt,
-                                     exaggeration=unit.expression, cfg_weight=.5, temperature=.65)
+                wav = model.generate(unit.text, language_id=BRAZILIAN_LANGUAGE_ID, audio_prompt_path=prompt,
+                                     exaggeration=unit.expression, cfg_weight=BRAZILIAN_CFG_WEIGHT, temperature=.65)
                 if prompt:
                     conditions[unit.voice] = copy.deepcopy(model.conds).to('cpu')
             if cancelled and cancelled():

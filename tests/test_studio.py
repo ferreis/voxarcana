@@ -137,6 +137,7 @@ class BrazilianGenerationTest(unittest.TestCase):
         self.assertIsNotNone(calls[0].kwargs['audio_prompt_path'])
         for call in calls:
             self.assertEqual(call.kwargs['language_id'], 'pt')
+            self.assertEqual(call.kwargs['cfg_weight'], 0.0)
             self.assertLessEqual(len(call.args[0]), 100)
         self.assertIsNone(calls[-1].kwargs['audio_prompt_path'])
 

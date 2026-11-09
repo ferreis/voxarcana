@@ -41,7 +41,7 @@ watch(reviewedLines, lines => emit('change', lines), { immediate: true })
 <template>
   <section class="cast-review" aria-labelledby="cast-review-title">
     <h2 id="cast-review-title">Confira as vozes da cena</h2>
-    <p>Escolha as vozes dos personagens. As escolhas salvas já estão preenchidas e podem ser alteradas. Quando terminar, use Gerar áudio na etapa 2.</p>
+    <p>Confira ou altere as vozes dos personagens. Quando terminar, clique em Gerar áudio.</p>
     <p v-if="stale" class="error-message">O texto mudou. Clique em Analisar novamente.</p>
     <fieldset :disabled="disabled || stale">
       <div v-for="(actor, index) in actors" :key="actor.key" class="actor-row" :class="{ 'saved-actor': actor.saved }">

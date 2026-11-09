@@ -80,8 +80,11 @@ class LoudnessTest(unittest.TestCase):
             sr = 24000
             device = 'cpu'
             conds = Conditions()
-            def __init__(self): self.calls = 0
+            def __init__(self):
+                self.calls = 0
+                self.generation_settings = []
             def generate(self, *args, **kwargs):
+                self.generation_settings.append(kwargs)
                 amplitude = [.015, .5, .07][self.calls]
                 self.calls += 1
                 return torch.from_numpy(speech_like() * amplitude).unsqueeze(0)
@@ -91,7 +94,11 @@ class LoudnessTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             for voice in ['narrator', 'actor', 'other']: Path(directory, voice + '.wav').touch()
             with patch('backend.app.brazilian.reference_path', side_effect=lambda v: Path(directory, v + '.wav')):
-                wav = BrazilianEngine()._perform(Model(), units, None, None, None, None)
+                generation_model = Model()
+                wav = BrazilianEngine()._perform(generation_model, units, None, None, None, None)
+        for generation_settings in generation_model.generation_settings:
+            self.assertEqual(generation_settings['language_id'], 'pt')
+            self.assertEqual(generation_settings['cfg_weight'], 0.0)
         samples, rate = sf.read(BytesIO(wav))
         levels = [float(loudness(samples[int(index * 3.1 * rate):int((index * 3.1 + 3) * rate)], rate)['input_i']) for index in range(3)]
         self.assertLess(max(levels) - min(levels), .3)
