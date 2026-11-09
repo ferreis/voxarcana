@@ -25,7 +25,9 @@ Para reiniciar os serviços locais e o analisador Ollama usando o script de dese
 1. Adicione uma gravação brasileira autorizada à biblioteca de vozes. O estúdio só usa referências importadas e registradas pelo usuário.
 2. Cole uma cena de até 10.000 caracteres e escolha uma voz de narrador.
 3. Clique em **Analisar texto e escolher vozes**. Confira os personagens detectados, as vozes e as falas.
-4. Gere o áudio e use o player para ouvir ou baixar o WAV.
+4. Na etapa **2 · Gerar áudio**, confirme as vozes com o botão **Gerar áudio**. Use o player para ouvir ou baixar o WAV.
+
+A análise sempre aguarda essa confirmação, inclusive em cenas com apenas narrador ou com personagens já salvos. Se alterar o texto, analise novamente antes de gerar.
 
 A biblioteca permite classificar vozes como narrador, personagem ou ambos. O elenco pode memorizar escolhas para cenas futuras. Há controle de velocidade do arquivo exportado e nivelamento de volume por trecho. O ajuste de velocidade e a normalização dependem do FFmpeg.
 

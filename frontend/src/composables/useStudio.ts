@@ -33,9 +33,9 @@ export function useStudio() {
   const words = computed(() => text.value.trim().split(/\s+/).filter(Boolean).length)
   const selectedVoice = computed(() => voices.value.find(item => item.id === voice.value))
   const status = computed(() => {
-    if (submitting.value && !job.value) return 'Preparando a narração…'
+    if (submitting.value && !job.value) return 'Preparando a análise…'
     if (job.value?.status === 'review') return 'Análise pronta. Revise os personagens e escolha suas vozes.'
-    if (job.value?.status === 'queued') return 'Sua narração está na fila…'
+    if (job.value?.status === 'queued') return job.value.scene ? 'A geração do áudio está na fila…' : 'A análise do texto está na fila…'
     if (job.value?.status === 'cancelling') return job.value.stage === 'analyzing' ? 'Cancelando a análise da cena…' : 'Cancelando após o trecho atual…'
     if (job.value?.status === 'running' && job.value.stage === 'analyzing') return 'Entendendo a cena e identificando as vozes…'
     if (job.value?.status === 'running' && job.value.stage === 'assembling') return 'Unindo as vozes da sua cena…'
@@ -108,20 +108,20 @@ export function useStudio() {
       await poll(job.value.id)
     }
   }
-  async function generate() {
+  async function analyze() {
     if (busy.value) return
     error.value = ''
     notice.value = ''
-    if (!voice.value) { error.value = 'Adicione uma voz de narrador antes de gerar.'; return }
+    if (!voice.value) { error.value = 'Adicione uma voz de narrador antes de analisar.'; return }
     if (!text.value.trim()) { error.value = 'Cole ou escreva o texto que você quer narrar.'; return }
     submitting.value = true
     startedAt = Date.now()
     elapsed.value = 0
     try {
       const result = await studioApi.generate({ text: text.value, voice: voice.value, style: style.value, automatic: true, review: true, speed: speed.value })
-      job.value = { id: result.id, status: 'queued', completed: 0, total: 0, error: null }
+      job.value = { id: result.id, status: 'queued', stage: 'analyzing', completed: 0, total: 0, error: null }
       await poll(result.id)
-    } catch (problem) { error.value = problem instanceof Error ? problem.message : 'Não foi possível iniciar a geração.' }
+    } catch (problem) { error.value = problem instanceof Error ? problem.message : 'Não foi possível iniciar a análise.' }
     finally { submitting.value = false }
   }
   async function perform(lines: ReviewedLine[]) {
@@ -171,5 +171,5 @@ export function useStudio() {
   })
   return { text, title, voice, style, speed, voices, styles, engine, connected, checking, busy,
     job, error, notice, audioUrl, audioTitle, elapsed, words, selectedVoice, status,
-    generate, perform, cancel, reconnect, addReference, updateVoice, deleteVoice }
+    analyze, perform, cancel, reconnect, addReference, updateVoice, deleteVoice }
 }

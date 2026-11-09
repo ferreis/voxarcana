@@ -14,7 +14,7 @@ from threading import Thread
 import unittest
 
 try:
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import sync_playwright, expect
 except ImportError:
     sync_playwright = None
 
@@ -64,10 +64,96 @@ class StudioBrowserTests(unittest.TestCase):
             "/v1/styles": [{"id": "neutral", "name": "Neutro"}],
         }
         for endpoint, response in responses.items():
-            page.route(f"**{endpoint}", lambda route, payload=response:
+            page.route(f"**{endpoint}", lambda route, request, payload=response:
                        route.fulfill(status=200, content_type="application/json", body=json.dumps(payload)))
         page.goto(self.url, wait_until="networkidle")
         return page
+
+    def mock_analysis(self, page, dialogue=False, saved_voice=False):
+        source_text = 'A noite chegou. "Olá!"' if dialogue else 'A noite chegou.'
+        segments = [{"id": 0, "kind": "narration", "text": "A noite chegou.",
+                     "speaker": "Narrador", "gender": "unknown", "delivery": "neutral"}]
+        if dialogue:
+            segments.append({"id": 1, "kind": "dialogue", "text": "Olá!", "speaker": "Lia",
+                             "gender": "female", "delivery": "neutral",
+                             "voice_id": "actor-1" if saved_voice else "",
+                             "character_saved": saved_voice})
+        job_response = {"id": "analysis-test", "status": "review", "stage": "review",
+                        "completed": 0, "total": 0, "error": None, "source_text": source_text,
+                        "analysis_percent": 100, "scene": {"method": "test", "warning": None, "segments": segments}}
+        approvals = []
+
+        def approve(route):
+            approvals.append(route.request.post_data_json)
+            job_response.update(status="running", stage="loading")
+            route.fulfill(status=202, content_type="application/json", body='{"id":"analysis-test"}')
+
+        page.route("**/v1/jobs", lambda route: route.fulfill(
+            status=202, content_type="application/json", body='{"id":"analysis-test"}'))
+        page.route("**/v1/jobs/analysis-test", lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(job_response)))
+        page.route("**/v1/jobs/analysis-test/perform", approve)
+        page.locator("#narration-text").fill(source_text)
+        page.get_by_role("button", name="Analisar texto e escolher vozes").click()
+        expect(page.get_by_role("heading", name="Confira as vozes da cena")).to_be_visible()
+        return approvals
+
+    def test_narracao_so_gera_audio_apos_confirmacao(self):
+        page = self.open_studio()
+        try:
+            generate_button = page.get_by_role("button", name="Gerar áudio", exact=True)
+            expect(generate_button).to_be_disabled()
+            approvals = self.mock_analysis(page)
+            expect(generate_button).to_be_enabled()
+            self.assertEqual(approvals, [])
+            self.assertEqual(page.locator('[aria-current="step"]').inner_text().splitlines()[0], "1")
+            generate_button.click()
+            expect(page.get_by_role("button", name="Gerando áudio…")).to_be_visible()
+            self.assertEqual(len(approvals), 1)
+            self.assertEqual(approvals[0]["lines"], [])
+            self.assertEqual(approvals[0]["voice"], "narrator-1")
+            self.assertEqual(page.locator('[aria-current="step"]').inner_text().splitlines()[0], "2")
+        finally:
+            page.close()
+
+    def test_personagem_exige_voz_e_texto_alterado_exige_nova_analise(self):
+        page = self.open_studio(voices=[
+            {"id": "narrator-1", "name": "Narrador", "role": "narrator", "gender": "neutral"},
+            {"id": "actor-1", "name": "Atriz", "role": "character", "gender": "female"},
+        ])
+        try:
+            approvals = self.mock_analysis(page, dialogue=True)
+            generate_button = page.get_by_role("button", name="Gerar áudio", exact=True)
+            expect(generate_button).to_be_disabled()
+            page.locator("#actor-voice-0").select_option("actor-1")
+            expect(generate_button).to_be_enabled()
+            page.locator("#narration-text").fill("O texto foi alterado.")
+            expect(generate_button).to_be_disabled()
+            expect(page.get_by_text("O texto mudou. Clique em Analisar novamente.")).to_be_visible()
+            self.assertEqual(approvals, [])
+        finally:
+            page.close()
+
+    def test_elenco_salvo_aguarda_confirmacao_e_layout_adapta(self):
+        page = self.open_studio(voices=[
+            {"id": "narrator-1", "name": "Narrador", "role": "narrator", "gender": "neutral"},
+            {"id": "actor-1", "name": "Atriz", "role": "character", "gender": "female"},
+        ])
+        try:
+            approvals = self.mock_analysis(page, dialogue=True, saved_voice=True)
+            generate_button = page.get_by_role("button", name="Gerar áudio", exact=True)
+            expect(generate_button).to_be_enabled()
+            self.assertEqual(page.locator("#actor-voice-0").input_value(), "actor-1")
+            for viewport_width in [390, 768, 1024, 1440, 1920]:
+                page.set_viewport_size({"width": viewport_width, "height": 1000})
+                self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
+                page.screenshot(path=f"/tmp/voxarcana-steps-{viewport_width}.png", full_page=True)
+            self.assertEqual(approvals, [])
+            generate_button.click()
+            expect(page.get_by_role("button", name="Gerando áudio…")).to_be_visible()
+            self.assertEqual(approvals[0]["lines"][0]["voice_id"], "actor-1")
+        finally:
+            page.close()
 
     def test_editor_exemplo_habilita_analise(self):
         page = self.open_studio()

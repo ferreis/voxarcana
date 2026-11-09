@@ -71,9 +71,9 @@ class CharacterMemoryTest(unittest.TestCase):
         self.assertEqual(characters.apply_saved(self.scene(), 'carlos', self.catalog).spans[0].voice_override, 'ditador')
         self.assertEqual(characters.apply_saved(self.scene('Brigitte'), 'carlos', self.catalog).spans[0].voice_override, 'atriz')
 
-    def test_known_cast_skips_questions_but_new_character_stops_before_tts(self):
+    def test_known_and_new_characters_always_wait_for_generation_approval(self):
         self.remember()
-        for name, expected in [('Garrin', 'done'), ('Novo', 'review')]:
+        for name in ['Garrin', 'Novo']:
             queue = JobQueue()
             reader = Mock()
             reader.analyze.return_value = self.scene(name, 'female')
@@ -84,11 +84,11 @@ class CharacterMemoryTest(unittest.TestCase):
                  patch('backend.app.jobs.get_engine', return_value=engine):
                 job = queue.submit({'text': '"Oi!"', 'voice': 'carlos', 'review': True})
                 queue.pool.shutdown(wait=True)
-            self.assertEqual(job.status, expected)
-            if expected == 'done':
-                self.assertEqual(engine.synthesize.call_args.kwargs['scene'].spans[0].voice_override, 'ditador')
-            else:
-                engine.assert_not_called()
+            self.assertEqual(job.status, 'review')
+            engine.assert_not_called()
+            if name == 'Garrin':
+                self.assertEqual(job.scene['segments'][0]['voice_id'], 'ditador')
+                self.assertTrue(job.scene['segments'][0]['character_saved'])
 
     def test_character_api_lists_and_edits_saved_choice(self):
         from fastapi.testclient import TestClient

@@ -99,13 +99,10 @@ class JobQueue:
                     job.review_scene = scene
                     job.review_payload = payload
                     job.scene = scene.public()
-                    needs_review = any(s.kind == 'dialogue' and s.text and not s.character_saved for s in scene.spans)
-                    if needs_review:
-                        job.status = 'review'
-                        job.stage = 'review'
-                        return
-                # All speakers already have a valid user choice: continue directly.
-                payload = {**payload, 'automatic': True, 'scene': scene}
+                    job.status = 'review'
+                    job.stage = 'review'
+                # A análise nunca inicia a síntese, mesmo com elenco salvo ou só narração.
+                return
             callbacks = {'on_scene': on_scene, 'on_unit': on_unit, 'on_stage': on_stage, 'on_analysis': on_analysis} if payload.get('automatic') else {}
             audio = get_engine().synthesize(**payload, progress=progress,
                                             cancelled=job.cancel.is_set, **callbacks)

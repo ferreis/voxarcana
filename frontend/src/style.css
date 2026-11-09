@@ -213,3 +213,14 @@ select { cursor: pointer; min-height: 42px; }
 .compact-button { padding: 0; width: 39px; min-height: 42px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .narrator-field, .voice-setting { margin-bottom: 22px; }
 @media (max-width: 767px) { .mobile-add-voice { display: inline-flex; } .header-actions .locale-badge { font-size: 9px; gap: 6px; } .header-actions { gap: 8px; } .voice-panel { display: block; } }
+
+.workflow-steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; list-style: none; padding: 0; margin: 0 0 28px; }
+.workflow-steps li { display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #303a2d; padding: 0 0 18px; color: #a6b29c; min-width: 0; }
+.workflow-steps .current-step { border-color: #cdb58a; color: #e6e9e1; }
+.step-number { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border: 1px solid #566448; border-radius: 50%; color: #cdb58a; }
+.workflow-steps strong { display: block; font-size: 14px; line-height: 1.5; }
+.workflow-steps small { display: block; font-size: 12px; line-height: 1.6; color: #a6b29c; margin-top: 4px; }
+.audio-generation-step { border-top: 1px solid #3f4937; margin-top: 24px; padding-top: 24px; }
+.audio-generation-step > p { color: #a6b29c; font-size: 13px; line-height: 1.7; margin: 12px 0; }
+.audio-generation-step .generation-bar { border: 0; margin-top: 0; padding-top: 8px; }
+@media (max-width: 767px) { .workflow-steps { grid-template-columns: 1fr; gap: 16px; } .workflow-steps li { padding-bottom: 12px; } }

@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { AudioLines, BookOpen, CircleHelp, FileText, Headphones, LoaderCircle, Mic2, ShieldCheck, Sparkles, Square, WandSparkles, SlidersHorizontal, UsersRound } from 'lucide-vue-next'
+import { computed, ref, watch } from 'vue'
+import { AudioLines, BookOpen, CircleHelp, FileText, LoaderCircle, Mic2, ShieldCheck, Sparkles, Square, SlidersHorizontal, UsersRound } from 'lucide-vue-next'
 import CharacterLibraryDialog from './components/CharacterLibraryDialog.vue'
 import CastReview from './components/CastReview.vue'
+import AudioGenerationStep from './components/AudioGenerationStep.vue'
+import type { ReviewedLine } from './services/studio'
 import { useExclusiveAudio } from './composables/useExclusiveAudio'
 import GenerationProgress from './components/GenerationProgress.vue'
 import AudioPlayer from './components/AudioPlayer.vue'
@@ -22,7 +24,15 @@ const showHelp = ref(false)
 const cast = computed(() => [...new Set(job.value?.scene?.segments.filter(segment => segment.kind === 'dialogue').map(segment => segment.speaker) || [])])
 const deliveryNames: Record<string, string> = { neutral: 'Natural', warm: 'Afetuoso', playful: 'Bem-humorado', firm: 'Firme', urgent: 'Urgente', soft: 'Baixo e íntimo', sad: 'Vulnerável', tense: 'Tenso', angry: 'Irritado', fear: 'Ansioso' }
 const elapsedLabel = computed(() => `${Math.floor(elapsed.value / 60)}:${String(elapsed.value % 60).padStart(2, '0')}`)
-const progress = computed(() => job.value?.total ? Math.round(job.value.completed / job.value.total * 100) : 0)
+const reviewedLines = ref<ReviewedLine[] | null>(null)
+const audioStarted = computed(() => !!job.value?.scene && job.value.status !== 'review')
+const canGenerate = computed(() => !busy.value && connected.value && !!voice.value
+  && job.value?.status === 'review' && job.value.source_text === text.value.trim()
+  && reviewedLines.value !== null)
+watch(() => job.value?.id, () => { reviewedLines.value = null }, { flush: 'sync' })
+function generateAudio() {
+  if (canGenerate.value && reviewedLines.value !== null) void studio.perform(reviewedLines.value)
+}
 function example() {
   text.value = 'A chuva desenhava caminhos pelo vidro da velha biblioteca. Do outro lado da sala, uma única vela ainda resistia à escuridão.\n\nVocê encontra um envelope sobre a mesa. Na frente, escrito com uma caligrafia que conhece bem, está o seu nome.\n\nAo longe, o relógio da torre anuncia meia-noite. A carta começa com apenas três palavras: não confie nele.'
   title.value = 'A carta da meia-noite'
@@ -38,6 +48,10 @@ function example() {
         <section v-if="showHelp" class="help-strip"><BookOpen :size="22" /><div><strong>Da sua imaginação para a mesa.</strong><p>Cole a cena e clique em Analisar texto e escolher vozes. Confira os personagens, corrija nomes e gênero e escolha uma voz para cada um antes de gerar. Depois, ouça ou baixe o WAV. Para outro timbre de narrador, adicione uma gravação brasileira de referência. Você não precisa cadastrar os personagens nem descrever suas emoções. Tudo é gerado neste computador, sem assinatura.</p></div><button class="text-button" @click="showHelp = false">Entendi</button></section>
         <div v-if="error" class="error-message error-banner" role="alert"><span>{{ error }}</span><button v-if="!connected || notice" class="text-button" @click="studio.reconnect">Reconectar</button></div>
         <p v-if="notice" class="muted small" role="status">{{ notice }}</p>
+        <ol class="workflow-steps" aria-label="Etapas da narração">
+          <li :class="{ 'current-step': !audioStarted }" :aria-current="!audioStarted ? 'step' : undefined"><span class="step-number">1</span><div><strong>Analisar texto e escolher vozes</strong><small>Confira o narrador e as falas dos personagens.</small></div></li>
+          <li :class="{ 'current-step': audioStarted }" :aria-current="audioStarted ? 'step' : undefined"><span class="step-number">2</span><div><strong>Gerar áudio</strong><small>Confirme as vozes para iniciar a narração.</small></div></li>
+        </ol>
         <div class="studio-layout">
           <section class="editor-section" aria-label="Texto da narração">
             <div class="section-heading editor-actions"><button class="text-button" :disabled="busy" @click="example"><Sparkles :size="14" /> Carregar exemplo</button></div>
@@ -56,8 +70,18 @@ function example() {
             <div v-if="cast.length" class="cast-list" aria-label="Personagens identificados"><span v-for="name in cast" :key="name">{{ name }}</span></div>
           </aside>
         </div>
-        <div class="generation-bar"><div class="generation-status" role="status" aria-live="polite"><span class="status-icon"><LoaderCircle v-if="busy" :size="20" class="spin" /><Headphones v-else :size="20" /></span><div><strong>{{ status }}</strong><span v-if="busy">{{ elapsedLabel }} decorridos <template v-if="job?.total">· {{ progress }}% dos trechos concluídos</template></span><span v-else>A narração pode levar alguns minutos. Você pode continuar com esta aba aberta.</span></div></div><div class="generation-actions"><button v-if="busy" class="secondary-button" :disabled="job?.status === 'cancelling' || !job" @click="studio.cancel"><Square :size="14" /> Cancelar</button><button class="primary-button" :disabled="busy || !connected || engine?.id !== 'chatterbox-br' || !engine?.installed || !voice || !text.trim()" @click="studio.generate"><LoaderCircle v-if="busy" :size="18" class="spin" /><WandSparkles v-else :size="18" />{{ busy ? 'Processando a cena' : job?.status === 'review' ? 'Analisar novamente' : 'Analisar texto e escolher vozes' }}<span v-if="!busy" aria-hidden="true">↗</span></button></div></div>
-        <CastReview v-if="job?.status === 'review' && job.scene" :key="job.id" :scene="job.scene" :voices="voices" :narrator="voice" :disabled="busy" :stale="job.source_text !== text.trim()" @generate="studio.perform" />
+        <div class="generation-bar">
+          <div class="generation-status" role="status" aria-live="polite">
+            <span class="status-icon"><LoaderCircle v-if="busy && !audioStarted" :size="20" class="spin" /><FileText v-else :size="20" /></span>
+            <div><strong>{{ audioStarted ? 'Análise concluída.' : status }}</strong><span v-if="busy && !audioStarted">{{ elapsedLabel }} decorridos</span><span v-else>Esta etapa analisa o texto. Nenhum áudio é gerado.</span></div>
+          </div>
+          <div class="generation-actions">
+            <button v-if="busy && !audioStarted" class="secondary-button" :disabled="job?.status === 'cancelling' || !job" @click="studio.cancel"><Square :size="14" /> Cancelar</button>
+            <button class="primary-button" :disabled="busy || !connected || engine?.id !== 'chatterbox-br' || !engine?.installed || !voice || !text.trim()" @click="studio.analyze"><LoaderCircle v-if="busy && !audioStarted" :size="18" class="spin" /><FileText v-else :size="18" />{{ busy && !audioStarted ? 'Analisando texto…' : job?.scene ? 'Analisar novamente' : 'Analisar texto e escolher vozes' }}</button>
+          </div>
+        </div>
+        <CastReview v-if="job?.status === 'review' && job.scene" :key="job.id" :scene="job.scene" :voices="voices" :narrator="voice" :disabled="busy" :stale="job.source_text !== text.trim()" @change="reviewedLines = $event" />
+        <AudioGenerationStep :ready="canGenerate" :active="audioStarted" :busy="busy" :cancelling="job?.status === 'cancelling'" :can-cancel="!!job" :status="status" :elapsed-label="elapsedLabel" @generate="generateAudio" @cancel="studio.cancel" />
         <p v-if="job?.scene?.warning" class="analysis-notice" role="status">{{ job.scene.warning }}</p>
         <details v-if="job?.scene?.segments.length" class="scene-preview"><summary>Como a cena foi interpretada <span>{{ cast.length }} personagens</span></summary><ol><li v-for="segment in job.scene.segments" :key="segment.id"><div><strong>{{ segment.speaker }}</strong><span>{{ deliveryNames[segment.delivery] || 'Natural' }} · {{ segment.kind === 'narration' ? selectedVoice?.name : voiceName(segment.voice_id) }}</span></div><p>{{ segment.text }}</p></li></ol></details>
         <GenerationProgress v-if="job" :job="job" />

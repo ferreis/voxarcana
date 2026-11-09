@@ -39,6 +39,32 @@ class CastReviewTest(unittest.TestCase):
         self.assertEqual(job.scene['segments'][1]['speaker'], 'Garri')
         engine.assert_not_called()
 
+    def test_narration_only_waits_until_explicit_generation(self):
+        queue = JobQueue()
+        self.addCleanup(queue.pool.shutdown, wait=True)
+        scene = Scene([Span(0, 0, 5, 'narration', 'Cena.', 'Cena.')], 'test')
+        reader = Mock()
+        reader.analyze.return_value = scene
+        job = Job('narration-only')
+        queue.jobs[job.id] = job
+        engine = Mock()
+        engine.synthesize.return_value = b'wav'
+        payload = {'text': 'Cena.', 'voice': 'narrator', 'style': 'neutral',
+                   'automatic': True, 'review': True}
+        with patch('backend.app.scene.get_reader', return_value=reader), \
+             patch('backend.app.jobs.get_engine', return_value=engine):
+            queue._run(job, payload)
+            self.assertEqual(job.status, 'review')
+            self.assertIsNone(job.audio)
+            engine.assert_not_called()
+            queue.perform_review(job.id, [], 'narrator', 'neutral',
+                                 [{'id': 'narrator', 'role': 'narrator'}])
+            queue.pool.shutdown(wait=True)
+        self.assertEqual(job.status, 'done')
+        self.assertEqual(job.audio, b'wav')
+        reader.analyze.assert_called_once()
+        engine.synthesize.assert_called_once()
+
     def test_review_uses_original_text_and_honors_corrected_name_gender_and_voice(self):
         queue = JobQueue()
         scene = self.scene()
