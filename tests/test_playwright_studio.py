@@ -116,6 +116,43 @@ class StudioBrowserTests(unittest.TestCase):
         finally:
             page.close()
 
+    def test_geracao_direta_usa_narrador_sem_interpretacao_e_recupera_apos_reload(self):
+        page = self.open_studio()
+        requests = []
+
+        def generate_narration(route):
+            requests.append(route.request.post_data_json)
+            route.fulfill(status=202, content_type="application/json", body='{"id":"narration-test"}')
+
+        page.route("**/v1/jobs", generate_narration)
+        page.route("**/v1/jobs/narration-test", lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps({
+                "id": "narration-test", "status": "running", "stage": "queued",
+                "completed": 1, "total": 3, "error": None, "scene": None})))
+        try:
+            narration_button = page.get_by_role("button", name="Gerar só com narrador", exact=True)
+            expect(narration_button).to_be_disabled()
+            source_text = 'A noite chegou. "Olá!" disse Lia.'
+            page.locator("#narration-text").fill(source_text)
+            for viewport_width in [390, 768, 1440]:
+                page.set_viewport_size({"width": viewport_width, "height": 1000})
+                self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
+            narration_button.click()
+            expect(page.get_by_role("button", name="Gerando áudio…", exact=True)).to_be_visible()
+            self.assertEqual(len(requests), 1)
+            self.assertEqual(requests[0]["text"], source_text)
+            self.assertEqual(requests[0]["voice"], "narrator-1")
+            self.assertIs(requests[0]["automatic"], False)
+            self.assertIs(requests[0]["review"], False)
+            expect(page.get_by_role("progressbar", name="Interpretação pela IA")).to_have_count(0)
+            expect(page.get_by_role("button", name="Cancelar", exact=True)).to_be_enabled()
+            page.reload(wait_until="networkidle")
+            expect(page.get_by_role("button", name="Gerando áudio…", exact=True)).to_be_visible()
+            expect(page.get_by_role("progressbar", name="Interpretação pela IA")).to_have_count(0)
+            self.assertEqual(len(requests), 1)
+        finally:
+            page.close()
+
     def test_personagem_exige_voz_e_texto_alterado_exige_nova_analise(self):
         page = self.open_studio(voices=[
             {"id": "narrator-1", "name": "Narrador", "role": "narrator", "gender": "neutral"},

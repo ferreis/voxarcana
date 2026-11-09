@@ -23,7 +23,7 @@ def loudness(audio, rate=24000):
         '-f', 'null', '-'], input=np.asarray(audio, dtype='<f4').tobytes(), stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE, check=True)
     report = result.stderr.decode()
-    return json.loads(report[report.rfind('{'):])
+    return json.JSONDecoder().raw_decode(report[report.rfind('{'):])[0]
 
 
 def speech_like():
@@ -34,6 +34,21 @@ def speech_like():
 
 @unittest.skipUnless(shutil.which('ffmpeg'), 'FFmpeg necessário')
 class LoudnessTest(unittest.TestCase):
+    def test_ffmpeg_messages_after_measurement_do_not_interrupt_normalization(self):
+        run_ffmpeg = subprocess.run
+
+        def append_ffmpeg_message(*arguments, **options):
+            result = run_ffmpeg(*arguments, **options)
+            result.stderr += b'\n[out#0/null] audio:375KiB\n'
+            return result
+
+        source = speech_like() * .02
+        with patch('backend.app.loudness.subprocess.run', side_effect=append_ffmpeg_message):
+            result = normalize_voice(source, 24000)
+        self.assertEqual(len(result), len(source))
+        self.assertTrue(np.isfinite(result).all())
+        self.assertAlmostEqual(float(loudness(result)['input_i']), TARGET_LUFS, delta=.3)
+
     def test_quiet_and_loud_voices_reach_same_perceived_level_with_peak_headroom(self):
         measured = []
         for amplitude in [.008, .08, .6]:

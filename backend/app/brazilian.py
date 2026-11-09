@@ -62,7 +62,8 @@ class BrazilianEngine:
         import torch
         from .config import get_settings
         torch.set_num_threads(min(4, os.cpu_count() or 1))
-        device = get_settings().device
+        configured_device = get_settings().device
+        device = configured_device
         if device == 'auto':
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
         package_name = 'voxarcana_chatterbox_br'
@@ -82,7 +83,25 @@ class BrazilianEngine:
         cls = sys.modules[package_name].ChatterboxTTS
         # CPU loading avoids a second full checkpoint allocation on the GPU.
         model = cls.from_local(MODEL_DIR, 'cpu')
-        model.to(device)
+        try:
+            model.to(device)
+        except torch.OutOfMemoryError:
+            if not device.startswith('cuda'):
+                raise
+            # A failed transfer may leave individual modules on different devices.
+            # Move all of them back before releasing unused CUDA allocations.
+            model.to('cpu')
+            with torch.cuda.device(device):
+                torch.cuda.empty_cache()
+            if configured_device != 'auto':
+                raise RuntimeError(
+                    'Memória da GPU insuficiente para carregar a voz. '
+                    'Libere memória de outros aplicativos ou configure '
+                    'VOXARCANA_DEVICE=auto para permitir o uso da CPU.'
+                ) from None
+            device = 'cpu'
+            logger.warning('Memória da GPU insuficiente. A narração continuará na CPU; '
+                           'a geração será mais lenta.')
         logger.info('Chatterbox PT-BR carregado em %s.', device)
         self._model = model
         return model

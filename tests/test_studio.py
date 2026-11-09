@@ -89,8 +89,35 @@ class StudioApiTest(unittest.TestCase):
             self.assertEqual(response.status_code, 202)
             submit.assert_called_once_with({'text': 'Uma cena.', 'voice': 'imported-narrator', 'style': 'epic', 'automatic': True, 'speed': 1.0})
 
+    def test_dialogue_without_interpretation_only_requires_narrator(self):
+        with patch('backend.app.main.queue.submit', return_value=SimpleNamespace(id='job')) as submit:
+            response = self.client.post('/v1/jobs', json={
+                'text': '"Volte!" disse Garrin.', 'voice': 'imported-narrator',
+                'automatic': False, 'review': False})
+            self.assertEqual(response.status_code, 202)
+            self.assertFalse(submit.call_args.args[0]['automatic'])
+            self.assertNotIn('review', submit.call_args.args[0])
+
 
 class BrazilianGenerationTest(unittest.TestCase):
+    def test_no_interpretation_reads_dialogue_with_narrator_reference(self):
+        engine = BrazilianEngine()
+        engine._model = Mock(sr=24000)
+        engine._model.generate.return_value = torch.zeros(1, 240)
+        source_text = 'A noite chegou. "Olá!" disse Lia.'
+        with TemporaryDirectory() as directory:
+            reference = Path(directory) / 'narrator.wav'
+            reference.touch()
+            with patch('backend.app.brazilian.reference_path', return_value=reference) as reference_lookup, \
+                 patch('backend.app.scene.get_reader') as reader:
+                audio = engine.synthesize(source_text, voice='imported-narrator', automatic=False)
+        reader.assert_not_called()
+        reference_lookup.assert_called_once_with('imported-narrator')
+        engine._model.generate.assert_called_once()
+        self.assertEqual(engine._model.generate.call_args.args[0], source_text)
+        self.assertEqual(engine._model.generate.call_args.kwargs['audio_prompt_path'], str(reference))
+        self.assertTrue(audio.startswith(b'RIFF'))
+
     def test_language_reference_and_chunk_joining(self):
         engine = BrazilianEngine()
         engine._model = Mock(sr=24000)

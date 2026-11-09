@@ -86,7 +86,7 @@ select { cursor: pointer; min-height: 42px; }
 .status-icon { color: #b4bda9; }
 .generation-status strong { display: block; font-size: 12px; font-weight: 500; color: #d9dfd0; }
 .generation-status div > span { display: block; font-size: 10px; line-height: 1.5; color: #98a68e; margin-top: 5px; }
-.generation-actions { display: flex; gap: 10px; }
+.generation-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .primary-button { min-height: 45px; padding: 12px 19px; border: 1px solid #ddc99d; border-radius: 7px; background: #d4bd91; color: #243023; font-size: 12px; font-weight: 650; display: inline-flex; align-items: center; justify-content: center; gap: 10px; white-space: nowrap; }
 .primary-button:hover:enabled { background: #e7cea1; }
 .primary-button:disabled { opacity: .5; }

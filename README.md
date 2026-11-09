@@ -16,6 +16,8 @@ O inicializador prepara o ambiente Python isolado em `backend/.venv-br`, instala
 
 Abra **http://127.0.0.1:8765**. Encerre com **Ctrl+C**. O servidor não deve ser exposto à internet ou à rede local.
 
+Com `VOXARCANA_DEVICE=auto` em `backend/.env`, o modelo de voz tenta usar a GPU. Se faltar memória durante o carregamento, continua na CPU, com geração mais lenta. Para tentar a GPU novamente após liberar memória, reinicie o backend. Use `VOXARCANA_DEVICE=cpu` para sempre usar a CPU; ao definir `cuda` explicitamente, a falta de memória é informada como erro.
+
 O processamento de diálogos por inteligência artificial requer o **Ollama** instalado localmente e o modelo `qwen3:4b-instruct-2507-q4_K_M`. O backend usa a porta de loopback `11435` e pode preparar o modelo na primeira análise. Instalação do Ollama: https://ollama.com/download . Sem o Ollama, a análise pode recorrer à segmentação conservadora do texto.
 
 Para reiniciar os serviços locais e o analisador Ollama usando o script de desenvolvimento, execute `./reiniciar.sh` depois de configurar o ambiente.
