@@ -12,7 +12,7 @@ export UV_PYTHON_INSTALL_DIR="$BACKEND_DIR/.cache/python"
 export UV_PYTHON_BIN_DIR="$BACKEND_DIR/.cache/bin"
 
 
-for required_command in node npm; do
+for required_command in node npm ffmpeg ffprobe; do
     if ! command -v "$required_command" >/dev/null 2>&1; then
         printf 'Instale %s antes de executar ./start.\n' "$required_command" >&2
         exit 1

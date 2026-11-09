@@ -1,47 +1,8 @@
-# VoxArcana
+# VoxArcana Studio
 
-Extensão do Google Chrome/Chromium para ler mensagens digitadas ou textos selecionados em português brasileiro.
+Estúdio local de narração para RPG. Usa Vue 3 no frontend, FastAPI no backend e Chatterbox PT-BR para gerar áudio WAV. A extensão Chromium continua disponível para leitura de texto.
 
-- **Vozes do Chrome:** lê sem iniciar o backend, usando as vozes PT-BR disponíveis no navegador/sistema. Algumas vozes precisam de internet; a disponibilidade varia, especialmente no Linux.
-- **Voz personalizada local:** usa Qwen3-TTS para gerar narração com descrição de timbre, sotaque e emoção, além de dez estilos de leitura. Requer o backend Python e o modelo no computador, sem API paga.
-- Caixa de texto com até 10.000 caracteres, seleção de voz, velocidade, pausar, continuar e parar.
-- Configurações salvas no computador. O rascunho permanece durante a sessão do navegador e é removido ao encerrar o Chrome ou recarregar/desativar a extensão.
-- A reprodução continua quando você fecha a janela da extensão.
-
-## Instalar e usar no Chrome
-
-Requer Chrome/Chromium 116 ou superior.
-
-1. Abra `chrome://extensions`.
-2. Ative **Modo do desenvolvedor**.
-3. Clique em **Carregar sem compactação** e selecione a pasta `extension/` deste projeto.
-4. Fixe o VoxArcana pelo menu de extensões do Chrome e clique no ícone.
-5. Escreva ou cole a mensagem na caixa de texto.
-6. Selecione **Vozes do Chrome** e uma voz brasileira. Clique em **Ler mensagem**.
-
-Se já instalou uma versão anterior, clique em **Recarregar** no cartão da extensão em `chrome://extensions`.
-
-Se não aparecer nenhuma voz brasileira, clique em **Atualizar vozes** após instalar/habilitar uma voz PT-BR no sistema ou um mecanismo TTS para Chrome. Você também pode usar o motor local abaixo. A extensão não substitui português brasileiro por uma voz de outro idioma silenciosamente.
-
-Para ler em uma página, selecione um trecho, clique com o botão direito e escolha **Narrar com VoxArcana**. Esse menu usa o motor, a voz e o estilo salvos na janela da extensão. Em caso de falha, um `!` aparece no ícone; abra a extensão para ver a mensagem.
-
-## Usar uma voz personalizada em PT-BR
-
-1. Inicie o backend conforme as instruções abaixo.
-2. Na extensão, selecione **Voz personalizada · motor local**.
-3. Clique em **Verificar motor local** para conferir a conexão e atualizar os perfis/estilos disponíveis.
-4. Escolha um estilo, como **Neutro**, **Fantasia Épica**, **Calmo** ou **Mistério**.
-5. Em **Como a voz deve soar?**, descreva a voz. Exemplo:
-
-   > Voz feminina adulta, brasileira, suave e acolhedora, com sotaque brasileiro neutro e dicção clara.
-
-6. Clique em **Ler mensagem**.
-
-A descrição substitui o timbre do perfil base, preservando as instruções de português brasileiro e o estilo escolhido. Deixe em branco para usar o Narrador BR padrão. A tonalidade é ajustável nas vozes do Chrome; a velocidade está disponível nos dois motores e, no motor local, é aplicada à reprodução do áudio.
-
-**Limite atual:** Voice Design gera voz por descrição; a identidade pode variar entre leituras e o sotaque precisa ser conferido na prática. Clonagem por gravação e identidade persistente ainda não foram implementadas. A primeira geração carrega o modelo e pode levar minutos, sobretudo em CPU. Parar cancela a espera/reprodução na extensão; uma geração já iniciada pode continuar consumindo recursos no servidor até terminar.
-
-## Iniciar o estúdio local
+## Instalação e inicialização
 
 Na raiz do projeto, execute:
 
@@ -49,51 +10,53 @@ Na raiz do projeto, execute:
 ./start
 ```
 
-Requisitos: Node.js **20.19+ na versão 20 ou 22.12+**, npm e `curl` ou `wget` para o download automático. O script reutiliza um Python **3.10 a 3.12** instalado. Se houver apenas Python 3.14, outra versão incompatível ou nenhum Python, baixa o gerenciador uv e um **Python 3.12 local**, sem `sudo` e sem alterar o Python do sistema ou o perfil do terminal. Os arquivos ficam em `backend/.cache/`. Se necessário, indique um Python compatível com `PYTHON_BIN=/caminho/python3.12 ./start`.
+O inicializador prepara o ambiente Python isolado em `backend/.venv-br`, instala dependências, baixa os modelos fixados no projeto, compila a interface e inicia o servidor local. A primeira execução exige internet e espaço para os modelos.
 
-O script executa todo o preparo e a inicialização:
+**Requisitos:** Node.js 20.19+ (linha 20) ou 22.12+, npm, FFmpeg (com `ffprobe`) e Python 3.10 a 3.12. Se não houver Python compatível, o script usa o gerenciador `uv` para instalar Python 3.12 dentro do projeto. `curl` ou `wget` são necessários nesse caso. Use `PYTHON_BIN=/caminho/python3.12 ./start` para selecionar um interpretador.
 
-1. Cria e ativa `backend/.venv-br` ou reutiliza o ambiente existente.
-2. Instala as dependências Python e os pacotes do frontend quando necessário.
-3. Baixa o modelo Chatterbox PT-BR, o carregador fixado e a voz de referência. Nas próximas execuções, verifica os arquivos locais e reutiliza os downloads.
-4. Cria `backend/.env` a partir do exemplo, caso ainda não exista. Configurações existentes são preservadas; o script seleciona o motor `chatterbox-br`.
-5. Compila o frontend e inicia o backend, que também serve a interface.
+Abra **http://127.0.0.1:8765**. Encerre com **Ctrl+C**. O servidor não deve ser exposto à internet ou à rede local.
 
-Abra **http://127.0.0.1:8765**. Use **Ctrl+C** no terminal para encerrar.
+O processamento de diálogos por inteligência artificial requer o **Ollama** instalado localmente e o modelo `qwen3:4b-instruct-2507-q4_K_M`. O backend usa a porta de loopback `11435` e pode preparar o modelo na primeira análise. Instalação do Ollama: https://ollama.com/download . Sem o Ollama, a análise pode recorrer à segmentação conservadora do texto.
 
-A primeira execução precisa de internet e espaço para as dependências e os modelos. Se uma instalação falhar, execute `./start` novamente. O frontend e a API usam o mesmo processo e endereço.
+Para reiniciar os serviços locais e o analisador Ollama usando o script de desenvolvimento, execute `./reiniciar.sh` depois de configurar o ambiente.
 
-A voz brasileira usa uma gravação de referência. A descrição textual de timbre pertence ao motor Qwen; no estúdio brasileiro, use a voz de demonstração ou envie uma gravação pela interface. O modelo é carregado na primeira geração de áudio.
+## Narração e biblioteca
 
-Para conferir a API:
+1. Adicione uma gravação brasileira autorizada à biblioteca de vozes. O estúdio só usa referências importadas e registradas pelo usuário.
+2. Cole uma cena de até 10.000 caracteres e escolha uma voz de narrador.
+3. Clique em **Analisar texto e escolher vozes**. Confira os personagens detectados, as vozes e as falas.
+4. Gere o áudio e use o player para ouvir ou baixar o WAV.
 
-```bash
-curl http://127.0.0.1:8765/health
-```
+A biblioteca permite classificar vozes como narrador, personagem ou ambos. O elenco pode memorizar escolhas para cenas futuras. Há controle de velocidade do arquivo exportado e nivelamento de volume por trecho. O ajuste de velocidade e a normalização dependem do FFmpeg.
 
-A resposta `{"status":"ok"}` confirma que a API está disponível, sem validar a geração de áudio.
+Os trabalhos ficam temporariamente na memória do servidor. O rascunho, as preferências e o identificador do trabalho ficam no armazenamento local do navegador. O histórico de áudio não sobrevive ao reinício do backend.
 
-### Placas com pouca VRAM
+## Extensão Chromium
 
-Em GPUs com até 8 GiB, `VOXARCANA_DECODER_DEVICE=auto` mantém o modelo de voz na GPU e converte seus códigos em áudio na CPU, reduzindo os picos de VRAM. `VOXARCANA_DECODER_DEVICE=cpu` força essa configuração em qualquer placa. A seleção automática de precisão usa `float16` em GPUs sem suporte a `bfloat16`, como a RTX 2060.
+Carregue o diretório `extension/` em `chrome://extensions` com o **Modo do desenvolvedor** ativo. A extensão permite usar vozes do Chrome ou o motor local, sempre mediante ação do usuário.
 
-Os textos são processados sequencialmente em trechos de até 350 caracteres e unidos em um WAV. O limite pode ser ajustado com `VOXARCANA_CHUNK_CHARS` (100 a 2.000). Isso limita o consumo de memória por trecho; a voz por descrição ainda pode variar entre eles. Requisições simultâneas aguardam sua vez, sem executar duas gerações na mesma GPU. Se outras aplicações ocuparem a VRAM necessária, use `VOXARCANA_DEVICE=cpu` e `VOXARCANA_DTYPE=float32` e reinicie o backend; a leitura será mais lenta.
-
-## Dados e permissões
-
-A extensão usa `tts`, `storage`, `contextMenus` e `offscreen`. Só solicita acesso HTTP a `http://127.0.0.1:8765/*`; não injeta scripts nem lê automaticamente o conteúdo das páginas. O menu de contexto recebe apenas o texto selecionado que você pediu para narrar.
-
-No modo local, texto e descrição são enviados ao backend em loopback. No modo Chrome, o tratamento do texto depende da voz escolhida, que pode usar um serviço online. O modelo pode precisar de internet para o primeiro download. Preferências e descrição da voz ficam em `storage.local`; o rascunho e o estado de reprodução ficam em `storage.session`.
-
-## Verificações de desenvolvimento
-
-Os testes de controle da extensão usam simulações das APIs do Chrome e não exigem instalar o modelo:
+## Desenvolvimento e testes
 
 ```bash
+npm --prefix frontend ci
+npm --prefix frontend run build
 node --test tests/extension.test.cjs
 backend/.venv-br/bin/python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-Para conferir a reprodução real, carregue a extensão no Chrome e teste uma frase curta nos dois modos. A qualidade da voz personalizada depende do modelo e do hardware.
+Os testes de interface usam Playwright para Python e o frontend compilado:
 
-Consulte [docs/ROADMAP.md](docs/ROADMAP.md) e [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+```bash
+python -m pip install playwright
+python -m playwright install chromium
+npm --prefix frontend run build
+python -m unittest tests/test_playwright_studio.py
+```
+
+As verificações de API podem exigir `httpx`. O modelo de voz não é necessário para os testes de interface, que simulam respostas HTTP.
+
+## Segurança e arquivos locais
+
+O servidor utiliza `127.0.0.1`, não possui autenticação para acesso público e **não deve receber tráfego externo**. O frontend exige que o usuário escolha e envie referências de voz autorizadas. Modelos e gravações são armazenados em `backend/models/` e `backend/voices/`, ignorados pelo Git.
+
+Documentação: [Arquitetura](docs/ARCHITECTURE.md), [Roadmap](docs/ROADMAP.md) e [Licenças de terceiros](docs/THIRD_PARTY.md).

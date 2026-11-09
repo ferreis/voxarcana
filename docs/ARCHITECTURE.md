@@ -1,58 +1,64 @@
 # Arquitetura do VoxArcana
 
-## Fluxo da extensão
+## Estúdio local
 
 ```text
-Caixa de texto no popup / seleção pelo menu de contexto
-                          |
-                          v
-              Service worker (background.js)
-                          |
-              +-----------+--------------+
-              |                          |
-      Vozes do Chrome              Motor local
-        chrome.tts                       |
-              |                Documento offscreen
-              |                          |
-              |                 FastAPI :8765
-              |                          |
-              |               Qwen3-TTS VoiceDesign
-              |                          |
-              |                     Áudio WAV
-              |                          |
-              |              Blob + elemento <audio>
-              +------------+-------------+
-                           |
-                  Reprodução no Chrome
+Aba do navegador (Vue 3 + TypeScript)
+           |
+           | POST /v1/jobs + consulta de andamento
+           v
+FastAPI 127.0.0.1:8765 ── serve frontend/dist em /
+           |
+           v
+Fila limitada, uma geração por vez
+           |
+           v
+Chatterbox PT-BR + referência brasileira
+           |
+           | trechos <=280 caracteres, idioma pt do checkpoint PT-BR
+           v
+WAV em memória ── /v1/jobs/{id}/audio ── player / download
 ```
 
-## Componentes
+`frontend/src/services/studio.ts` concentra HTTP. `composables/useStudio.ts` coordena configuração, rascunho local, envio, polling, reconexão, cancelamento e limpeza. Os componentes de áudio e de cadastro de referência cuidam da apresentação e de suas interações.
 
-- `extension/popup.html`, `popup.css`, `popup.js`: mensagem digitada, preferências, lista de vozes PT-BR, descrição de voz e controles. Fechar o popup não interrompe a reprodução.
-- `extension/settings.js`: valores padrão, normalização de configurações e validação do texto.
-- `extension/background.js`: menu de contexto, fila de comandos, roteamento de motores, controle do Chrome TTS e estado em `storage.session`. Cada leitura tem um identificador para descartar eventos de leituras antigas.
-- `extension/offscreen.js`: geração local, cancelamento de fetch, reprodução e liberação de URLs Blob. Retorna imediatamente ao comando de início e informa andamento por mensagens. Assim o popup não precisa permanecer aberto durante a geração.
-- `backend/`: FastAPI e Qwen3-TTS, carregado sob demanda na primeira síntese.
+`backend/app/brazilian.py` carrega o checkpoint específico de PT-BR com o código do demo oficial fixado por revisão, baixado por `./start`. As importações ficam em um namespace isolado para evitar conflito com outros pacotes `chatterbox`. A carga ocorre em CPU antes da movimentação dos pesos para GPU. As vozes devem ser cadastradas pelo usuário com gravações autorizadas. Uma descrição em linguagem natural não substitui a referência neste motor.
 
-A extensão requer Chrome 116+ para consultar os contextos offscreen. As razões de criação são `AUDIO_PLAYBACK` e `BLOBS`: URLs Blob são usadas na reprodução, e o contexto precisa sobreviver durante gerações sem áudio que podem durar minutos. O documento permanece disponível para novas leituras; ao parar ou concluir, libera áudio e URLs. A espera pela geração tem limite de 15 minutos. Cancelar a requisição no cliente não interrompe a inferência síncrona já iniciada no backend.
+`backend/app/jobs.py` mantém até três trabalhos ativos e uma fila de execução única. Atualizações são protegidas por lock. O cancelamento é cooperativo, verificado antes e depois de cada trecho; uma geração do modelo já em curso termina antes de ser descartada. Áudios concluídos têm retenção limitada em memória, expiram ao reiniciar o servidor e podem ser removidos ao enviar novos trabalhos após uma hora ou quando o limite de retenção é atingido.
 
-## API local
+As referências do usuário são validadas por tamanho e duração, decodificadas, convertidas em mono e armazenadas sob identificadores UUID em `backend/voices/references`. O nome original do arquivo nunca vira caminho de leitura. O servidor escuta em loopback. Escritas HTTP com Origin são limitadas às origens locais conhecidas e a extensões Chrome; CORS não é uma autenticação e este servidor não foi feito para exposição pública.
 
-- `GET /health`: disponibilidade do servidor, sem carregar o modelo.
-- `GET /v1/voices`: perfis de voz.
-- `GET /v1/styles`: estilos de narração.
-- `POST /v1/speech`: recebe `text`, `voice`, `style` e `instruction` opcional; retorna WAV.
+## API
 
-A descrição personalizada substitui o timbre do perfil base, mantendo as regras de português brasileiro e o estilo de narração. O perfil base é usado quando a descrição está vazia. O modelo padrão é `Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign`; português brasileiro é orientado por instruções, sujeito à qualidade do modelo.
+- `GET /health`: disponibilidade e motor selecionado.
+- `GET /v1/engine`: capacidades e instalação do motor.
+- `GET /v1/voices`, `GET /v1/styles`: catálogo.
+- `POST /v1/voices/reference`: cadastro de referência WAV/FLAC.
+- `GET /v1/voices/{id}/reference`: ouvir a gravação original.
+- `POST /v1/jobs`: enfileira narração brasileira.
+- `GET /v1/jobs/{id}`: andamento e erro.
+- `DELETE /v1/jobs/{id}`: pede cancelamento.
+- `GET /v1/jobs/{id}/audio`: WAV concluído.
+- `POST /v1/speech`: síntese síncrona preservada para a extensão.
 
-O motor serializa a carga e as gerações com um lock. Cada texto é dividido por frases/palavras em trechos limitados por `VOXARCANA_CHUNK_CHARS` (350 por padrão), sintetizados individualmente e unidos com pausas de 150 ms. Em GPUs com até 8 GiB, o modo automático move o decodificador de áudio para CPU/float32 e atualiza o dispositivo armazenado pelo wrapper do tokenizer. A geração de códigos permanece na GPU. `VOXARCANA_DECODER_DEVICE` permite selecionar explicitamente o dispositivo do decodificador. A seleção automática de dtype verifica suporte a bfloat16, usando float16 nas GPUs CUDA que não o oferecem. O alocador CUDA usa segmentos expansíveis por padrão, respeitando uma configuração externa já existente.
+## Qwen e extensão anteriores
 
-## Persistência e acesso
+O ambiente `.venv` e a seleção `VOXARCANA_ENGINE=qwen` preservam o Qwen3-TTS VoiceDesign. `.venv-br` usa as dependências incompatíveis do carregador brasileiro. `./start` seleciona explicitamente `chatterbox-br` e serve interface + API em um único endereço.
 
-Configurações ficam em `chrome.storage.local`. O texto digitado e o estado ficam em `chrome.storage.session`, que sobrevive ao fechamento do popup e à suspensão do service worker, mas é limpo com o encerramento do navegador ou recarga da extensão.
+A extensão Manifest V3 continua com `chrome.tts` ou requisição síncrona ao backend local. Seu documento offscreen reproduz WAV/Blob sem manter o popup aberto. O menu de seleção usa as configurações salvas. A extensão não precisa ser instalada para usar o estúdio em uma aba.
 
-Não há scripts injetados, leitura automática das páginas nem dependências JavaScript externas. O único host autorizado é `127.0.0.1:8765`. Vozes do Chrome podem ser fornecidas pelo sistema ou por outros mecanismos, inclusive remotos.
+Clonagem por referência é oferecida pelo motor brasileiro. A naturalidade, semelhança com o falante e consistência entre trechos precisam de validação por escuta; não são garantidas pelo locale ou por uma resposta HTTP bem-sucedida.
 
-## Evolução
+## Interpretação automática de cenas
 
-Clonagem com referência aprovada, identidade persistente, streaming e inicialização automática do motor via Native Messaging permanecem como etapas futuras. O uso atual do motor local exige iniciar o backend manualmente.
+`backend/app/scene.py` separa narração e diálogo. O analisador local Ollama, quando disponível, atribui personagens e expressividade sem reescrever o texto. Sem o analisador, o sistema usa uma interpretação conservadora. O servidor Ollama é limitado ao endereço de loopback configurado em `VOXARCANA_READER_URL`.
+
+`backend/app/cast.py` monta o elenco. `backend/app/characters.py` mantém preferências de personagens em disco. `backend/app/reference_audio.py` limita e valida a mídia enviada. `backend/app/loudness.py` nivela cada trecho com FFmpeg; `backend/app/audio_speed.py` ajusta a velocidade final.
+
+No frontend, `CastReview.vue` oferece a revisão de falas, `VoiceLibraryDialog.vue` administra as referências e `GenerationProgress.vue` acompanha análise e geração. Os dados de referência não devem ser publicados ou compartilhados sem autorização.
+
+## Inicialização e segurança
+
+`./start` instala os componentes locais, compila o frontend e inicia a API em `127.0.0.1:8765`. A análise automática depende do Ollama instalado localmente. FFmpeg e ffprobe são exigidos para importação, velocidade e nivelamento de áudio.
+
+O controle de Origin e o CORS reduzem acesso acidental por sites, mas **não substituem autenticação**. Nunca exponha esta API a interfaces de rede pública. O script de inicialização pode baixar componentes externos; mantenha revisões fixadas e verifique suas fontes.
