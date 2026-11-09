@@ -60,7 +60,7 @@ export function useStudio() {
       connected.value = true
       if (!nextVoices.some(item => item.id === voice.value)) voice.value = nextVoices[0]?.id || ''
       if (!nextStyles.some(item => item.id === style.value)) style.value = 'neutral'
-      if (nextEngine.id !== 'chatterbox-br') error.value = 'O motor brasileiro ainda não está ativo. Inicie com bash scripts/start-studio.sh.'
+      if (nextEngine.id !== 'chatterbox-br') error.value = 'O motor brasileiro ainda não está ativo. Inicie com ./start.'
     } catch {
       connected.value = false
       error.value = 'Não consegui conectar ao estúdio. Confira se o servidor está aberto e tente reconectar.'

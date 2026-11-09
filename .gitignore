@@ -31,3 +31,6 @@ output/
 node_modules/
 frontend/dist/
 .venv-br/
+
+# Temporary installation files
+backend/.cache/

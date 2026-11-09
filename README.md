@@ -41,45 +41,37 @@ A descrição substitui o timbre do perfil base, preservando as instruções de 
 
 **Limite atual:** Voice Design gera voz por descrição; a identidade pode variar entre leituras e o sotaque precisa ser conferido na prática. Clonagem por gravação e identidade persistente ainda não foram implementadas. A primeira geração carrega o modelo e pode levar minutos, sobretudo em CPU. Parar cancela a espera/reprodução na extensão; uma geração já iniciada pode continuar consumindo recursos no servidor até terminar.
 
-## Executar o backend local (opcional)
+## Iniciar o estúdio local
 
-Requer Python 3.10 ou superior. Na raiz do projeto:
+Na raiz do projeto, execute:
 
 ```bash
-./scripts/setup-dev.sh
-cd backend
-source .venv/bin/activate
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
+./start
 ```
 
-Confira em outro terminal:
+Requisitos: Node.js **20.19+ na versão 20 ou 22.12+**, npm e `curl` ou `wget` para o download automático. O script reutiliza um Python **3.10 a 3.12** instalado. Se houver apenas Python 3.14, outra versão incompatível ou nenhum Python, baixa o gerenciador uv e um **Python 3.12 local**, sem `sudo` e sem alterar o Python do sistema ou o perfil do terminal. Os arquivos ficam em `backend/.cache/`. Se necessário, indique um Python compatível com `PYTHON_BIN=/caminho/python3.12 ./start`.
+
+O script executa todo o preparo e a inicialização:
+
+1. Cria e ativa `backend/.venv-br` ou reutiliza o ambiente existente.
+2. Instala as dependências Python e os pacotes do frontend quando necessário.
+3. Baixa o modelo Chatterbox PT-BR, o carregador fixado e a voz de referência. Nas próximas execuções, verifica os arquivos locais e reutiliza os downloads.
+4. Cria `backend/.env` a partir do exemplo, caso ainda não exista. Configurações existentes são preservadas; o script seleciona o motor `chatterbox-br`.
+5. Compila o frontend e inicia o backend, que também serve a interface.
+
+Abra **http://127.0.0.1:8765**. Use **Ctrl+C** no terminal para encerrar.
+
+A primeira execução precisa de internet e espaço para as dependências e os modelos. Se uma instalação falhar, execute `./start` novamente. O frontend e a API usam o mesmo processo e endereço.
+
+A voz brasileira usa uma gravação de referência. A descrição textual de timbre pertence ao motor Qwen; no estúdio brasileiro, use a voz de demonstração ou envie uma gravação pela interface. O modelo é carregado na primeira geração de áudio.
+
+Para conferir a API:
 
 ```bash
 curl http://127.0.0.1:8765/health
 ```
 
-Resposta esperada: `{"status":"ok"}`. Isso confirma que a API está disponível; o modelo só é carregado na primeira geração.
-
-### Baixar o modelo antes da primeira leitura
-
-O modelo padrão é `Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign`, com aproximadamente 4,5 GB. Na raiz do projeto:
-
-```bash
-./scripts/download-model.sh
-```
-
-O script baixa o modelo público sem enviar tokens Hugging Face salvos no computador, evitando erros de tokens antigos. Configure `backend/.env`:
-
-```env
-VOXARCANA_MODEL=./models/Qwen3-TTS-12Hz-1.7B-VoiceDesign
-VOXARCANA_DEVICE=auto
-VOXARCANA_DTYPE=auto
-VOXARCANA_ATTN=sdpa
-VOXARCANA_DECODER_DEVICE=auto
-VOXARCANA_CHUNK_CHARS=350
-```
-
-O Transformers usado pelo projeto exige `huggingface-hub >=0.34,<1.0`. O padrão detecta GPU NVIDIA ou usa CPU. Para uma GPU compatível, é possível configurar `VOXARCANA_DEVICE=cuda:0` e `VOXARCANA_DTYPE=bfloat16`. FlashAttention é opcional e exige instalação separada.
+A resposta `{"status":"ok"}` confirma que a API está disponível, sem validar a geração de áudio.
 
 ### Placas com pouca VRAM
 
@@ -99,7 +91,7 @@ Os testes de controle da extensão usam simulações das APIs do Chrome e não e
 
 ```bash
 node --test tests/extension.test.cjs
-backend/.venv/bin/python -m unittest discover -s tests -p 'test_*.py'
+backend/.venv-br/bin/python -m unittest discover -s tests -p 'test_*.py'
 ```
 
 Para conferir a reprodução real, carregue a extensão no Chrome e teste uma frase curta nos dois modos. A qualidade da voz personalizada depende do modelo e do hardware.

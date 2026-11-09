@@ -1,0 +1,229 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+trap 'printf "\nFalha na inicialização (linha %s). Corrija o erro acima e execute ./start novamente.\n" "$LINENO" >&2' ERR
+
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_DIR="$PROJECT_ROOT/backend"
+FRONTEND_DIR="$PROJECT_ROOT/frontend"
+VENV_DIR="$BACKEND_DIR/.venv-br"
+# Mantém o gerenciador, o Python baixado e seus caches dentro do projeto.
+export UV_CACHE_DIR="$BACKEND_DIR/.cache/uv-cache"
+export UV_PYTHON_INSTALL_DIR="$BACKEND_DIR/.cache/python"
+export UV_PYTHON_BIN_DIR="$BACKEND_DIR/.cache/bin"
+
+
+for required_command in node npm; do
+    if ! command -v "$required_command" >/dev/null 2>&1; then
+        printf 'Instale %s antes de executar ./start.\n' "$required_command" >&2
+        exit 1
+    fi
+done
+node --input-type=commonjs - <<'JS'
+const [majorVersion, minorVersion] = process.versions.node.split('.').map(Number);
+if (!(majorVersion === 20 && minorVersion >= 19 || majorVersion >= 22 && (majorVersion !== 22 || minorVersion >= 12))) {
+    console.error('O frontend requer Node.js 20.19+ na versão 20, ou 22.12+.');
+    process.exit(1);
+}
+JS
+
+compatible_python() {
+    "$1" -c 'import sys; sys.exit(not ((3, 10) <= sys.version_info[:2] <= (3, 12)))' 2>/dev/null
+}
+
+create_managed_venv() {
+    local uv_executable="$BACKEND_DIR/.cache/uv/bin/uv"
+    local installer_path="$BACKEND_DIR/.cache/uv/install.sh"
+    if [ ! -x "$uv_executable" ]; then
+        echo 'Baixando o gerenciador uv para preparar o Python local...'
+        mkdir -p "$(dirname "$installer_path")"
+        if command -v curl >/dev/null 2>&1; then
+            curl --fail --location --silent --show-error --retry 3 \
+                https://astral.sh/uv/install.sh --output "$installer_path"
+        elif command -v wget >/dev/null 2>&1; then
+            wget --quiet https://astral.sh/uv/install.sh -O "$installer_path"
+        else
+            echo 'Instale curl ou wget para baixar o Python automaticamente.' >&2
+            exit 1
+        fi
+        env UV_UNMANAGED_INSTALL="$(dirname "$uv_executable")" sh "$installer_path"
+    fi
+    echo 'Preparando Python 3.12 local e criando o ambiente virtual...'
+    "$uv_executable" venv --python 3.12 --managed-python --seed "$VENV_DIR"
+}
+
+if [ ! -x "$VENV_DIR/bin/python" ]; then
+    SELECTED_PYTHON="${PYTHON_BIN:-}"
+    if [ -z "$SELECTED_PYTHON" ]; then
+        for python_candidate in python3.12 python3.11 python3.10 python3; do
+            if command -v "$python_candidate" >/dev/null 2>&1 && compatible_python "$python_candidate"; then
+                SELECTED_PYTHON="$python_candidate"
+                break
+            fi
+        done
+    fi
+    if [ -n "$SELECTED_PYTHON" ]; then
+        if ! compatible_python "$SELECTED_PYTHON"; then
+            echo 'PYTHON_BIN precisa indicar um Python 3.10 a 3.12 válido. Remova essa variável para baixar Python 3.12 automaticamente.' >&2
+            exit 1
+        fi
+        echo 'Criando o ambiente virtual do backend...'
+        "$SELECTED_PYTHON" -m venv "$VENV_DIR"
+    else
+        create_managed_venv
+    fi
+fi
+if ! compatible_python "$VENV_DIR/bin/python"; then
+    echo 'backend/.venv-br precisa usar Python 3.10 a 3.12. Renomeie esse ambiente e execute ./start novamente.' >&2
+    exit 1
+fi
+# A ativação vale para este processo e para o servidor iniciado ao final.
+source "$VENV_DIR/bin/activate"
+mkdir -p "$BACKEND_DIR/.cache/tmp"
+export TMPDIR="$BACKEND_DIR/.cache/tmp"
+export HF_HUB_DISABLE_IMPLICIT_TOKEN=1
+export VOXARCANA_ENGINE=chatterbox-br
+
+file_digest() {
+    python - "$@" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+
+checksum = hashlib.sha256()
+for filename in sys.argv[1:]:
+    checksum.update(Path(filename).read_bytes())
+print(checksum.hexdigest())
+PY
+}
+
+backend_packages_ready() {
+    python - "$BACKEND_DIR/requirements-br.txt" <<'PYTHON' || return 1
+import sys
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
+
+from pip._vendor.packaging.requirements import Requirement
+
+for requirement_line in Path(sys.argv[1]).read_text().splitlines():
+    requirement_line = requirement_line.strip()
+    if not requirement_line or requirement_line.startswith('#'):
+        continue
+    requirement = Requirement(requirement_line)
+    if requirement.marker and not requirement.marker.evaluate():
+        continue
+    try:
+        installed_version = version(requirement.name)
+    except PackageNotFoundError:
+        sys.exit(1)
+    if installed_version not in requirement.specifier:
+        sys.exit(1)
+PYTHON
+    python -m pip check >/dev/null 2>&1
+}
+
+BACKEND_DIGEST="$(file_digest "$BACKEND_DIR/requirements-br.txt")"
+BACKEND_STAMP="$VENV_DIR/.voxarcana-requirements"
+if [ ! -f "$BACKEND_STAMP" ] || [ "$(cat "$BACKEND_STAMP")" != "$BACKEND_DIGEST" ] || ! backend_packages_ready; then
+    echo 'Instalando as dependências do backend...'
+    python -m pip install --upgrade pip
+    python -m pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+    python -m pip install -r "$BACKEND_DIR/requirements-br.txt"
+    python -m pip check
+    printf '%s\n' "$BACKEND_DIGEST" > "$BACKEND_STAMP"
+else
+    echo 'Dependências do backend já configuradas.'
+fi
+if [ ! -f "$BACKEND_DIR/.env" ]; then
+    cp "$BACKEND_DIR/.env.example" "$BACKEND_DIR/.env"
+fi
+
+# Mantém os mesmos checkpoints e carregador fixados usados pelo estúdio brasileiro.
+python - "$BACKEND_DIR" <<'PY'
+import json
+import sys
+import urllib.request
+from pathlib import Path
+
+from huggingface_hub import hf_hub_download, snapshot_download
+
+backend_dir = Path(sys.argv[1])
+model_dir = backend_dir / 'models/chatterbox-ptbr'
+source_dir = backend_dir / 'models/chatterbox-br-source'
+manifest_path = model_dir / '.voxarcana-ready.json'
+revisions = {
+    'model': 'b3952f18bc2eaa72b9bd7c17d2c4653bcad4770d',
+    'source': '9e515821e826e207cd617a0fdd0223899ed108ea',
+    'encoder': '5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18',
+}
+try:
+    manifest = json.loads(manifest_path.read_text())
+    required_files = manifest['files']
+    if manifest['revisions'] == revisions and required_files and all(
+        (backend_dir / filename).is_file()
+        and (backend_dir / filename).stat().st_size == expected_size
+        and (expected_size > 0 or Path(filename).name == '__init__.py')
+        for filename, expected_size in required_files.items()
+    ):
+        print('Modelo brasileiro e carregador já configurados.')
+        sys.exit(0)
+except (OSError, ValueError, KeyError, TypeError):
+    pass
+
+print('Verificando e baixando os arquivos do modelo brasileiro...', flush=True)
+snapshot_download(
+    repo_id='ResembleAI/Chatterbox-Multilingual-TTS-pt-br', repo_type='space',
+    revision=revisions['source'], allow_patterns=['chatterbox/**'],
+    local_dir=source_dir, token=False,
+)
+model_filenames = [
+    't3_pt_br.safetensors', 's3gen_v3.pt',
+    'grapheme_mtl_merged_expanded_v1.json',
+]
+snapshot_download(
+    repo_id='ResembleAI/Chatterbox-Multilingual-pt-br', revision=revisions['model'],
+    allow_patterns=[*model_filenames, 'README.md'], local_dir=model_dir, token=False,
+)
+hf_hub_download(
+    'ResembleAI/chatterbox', 've.pt', revision=revisions['encoder'],
+    local_dir=model_dir, token=False,
+)
+reference_path = model_dir / 'pt_br_f2.wav'
+if not reference_path.is_file() or reference_path.stat().st_size == 0:
+    temporary_path = reference_path.with_suffix('.download')
+    urllib.request.urlretrieve(
+        'https://storage.googleapis.com/chatterbox-demo-samples/'
+        'mtl-v3-single-language-prompts/pt-br/pt_br_f2.wav', temporary_path,
+    )
+    temporary_path.replace(reference_path)
+required_paths = [model_dir / filename for filename in [*model_filenames, 've.pt', 'pt_br_f2.wav']]
+required_paths.extend(source_dir.rglob('*.py'))
+required_paths.append(source_dir / 'chatterbox/src/chatterbox/__init__.py')
+file_sizes = {str(file_path.relative_to(backend_dir)): file_path.stat().st_size for file_path in required_paths}
+# Pacotes Python podem ter __init__.py vazio; pesos e demais arquivos não.
+empty_files = [
+    filename for filename, file_size in file_sizes.items()
+    if file_size == 0 and Path(filename).name != '__init__.py'
+]
+if empty_files:
+    raise RuntimeError('O download deixou arquivos obrigatórios vazios: ' + ', '.join(empty_files))
+manifest_path.write_text(json.dumps({'revisions': revisions, 'files': file_sizes}, indent=2))
+print('Modelo brasileiro pronto.')
+PY
+
+FRONTEND_DIGEST="$(file_digest "$FRONTEND_DIR/package.json" "$FRONTEND_DIR/package-lock.json")"
+FRONTEND_STAMP="$FRONTEND_DIR/node_modules/.voxarcana-packages"
+if [ ! -f "$FRONTEND_STAMP" ] || [ "$(cat "$FRONTEND_STAMP")" != "$FRONTEND_DIGEST" ] || ! npm --prefix "$FRONTEND_DIR" ls --depth=0 >/dev/null 2>&1; then
+    echo 'Instalando as dependências do frontend...'
+    npm --prefix "$FRONTEND_DIR" ci --include=dev
+    printf '%s\n' "$FRONTEND_DIGEST" > "$FRONTEND_STAMP"
+else
+    echo 'Dependências do frontend já configuradas.'
+fi
+# Compila a interface para incluir também alterações locais no código.
+echo 'Preparando a interface...'
+npm --prefix "$FRONTEND_DIR" run build
+
+cd "$BACKEND_DIR"
+echo 'Iniciando frontend e backend em http://127.0.0.1:8765'
+echo 'Use Ctrl+C para encerrar.'
+exec python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
