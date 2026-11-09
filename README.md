@@ -1,134 +1,62 @@
-"""Automatic, persistent casting and bounded delivery controls."""
-from dataclasses import dataclass
-import hashlib
-import json
-from pathlib import Path
-from threading import Lock
+# VoxArcana Studio
 
-from .scene import Scene, NARRATOR, identity
-from .tts import split_text
+Estúdio local de narração para RPG. Usa Vue 3 no frontend, FastAPI no backend e Chatterbox PT-BR para gerar áudio WAV. A extensão Chromium continua disponível para leitura de texto.
 
-CAST_FILE = Path(__file__).resolve().parents[1] / 'voices/cast.json'
-_lock = Lock()
+## Instalação e inicialização
 
-# These guide the existing TTS and simple post-processing. They do not simulate
-# crying/laughter or promise exact acting from a reference-conditioned model.
-DELIVERY = {
-    'neutral': (.45, 1.0, 1.0, .18),
-    'warm': (.5, .98, 1.0, .20),
-    'playful': (.6, 1.03, 1.0, .15),
-    'firm': (.55, .97, 1.0, .24),
-    'urgent': (.65, 1.07, 1.0, .12),
-    'soft': (.35, .95, 1.0, .24),
-    'sad': (.4, .94, 1.0, .30),
-    'tense': (.45, .96, 1.0, .30),
-    'angry': (.65, 1.04, 1.0, .16),
-    'fear': (.5, 1.04, 1.0, .16),
-}
+Na raiz do projeto, execute:
 
+```bash
+./start
+```
 
-@dataclass
-class Unit:
-    text: str
-    speaker: str
-    voice: str
-    gender: str
-    delivery: str
-    pitch: float
-    speed: float
-    gain: float
-    expression: float
-    pause: float
-    seed: int
-    source_id: int
+O inicializador prepara o ambiente Python isolado em `backend/.venv-br`, instala dependências, baixa os modelos fixados no projeto, compila a interface e inicia o servidor local. A primeira execução exige internet e espaço para os modelos.
 
+**Requisitos:** Node.js 20.19+ (linha 20) ou 22.12+, npm, FFmpeg (com `ffprobe`) e Python 3.10 a 3.12. Se não houver Python compatível, o script usa o gerenciador `uv` para instalar Python 3.12 dentro do projeto. `curl` ou `wget` são necessários nesse caso. Use `PYTHON_BIN=/caminho/python3.12 ./start` para selecionar um interpretador.
 
-def _profiles(scene, catalog, narrator_voice):
-    """Choose actual references, rechecking eligibility after library edits."""
-    with _lock:
-        try:
-            saved = json.loads(CAST_FILE.read_text())
-            if not isinstance(saved, dict):
-                saved = {}
-        except (OSError, ValueError):
-            saved = {}
-        result = {}
-        for span in scene.spans:
-            if span.kind != 'dialogue':
-                continue
-            key = identity(span.speaker)
-            digest = hashlib.sha256(key.encode()).digest()
-            old = saved.get(key, {})
-            gender = span.gender
-            kind = span.voice_kind
-            candidates = [v for v in catalog if v['id'] != narrator_voice
-                          and v.get('role', 'both') in {'both', 'character'}
-                          and v.get('kind', 'human') == kind
-                          and (gender == 'unknown' or v.get('gender', 'unknown') == gender)]
-            if span.voice_override:
-                candidates = [v for v in catalog if v['id'] == span.voice_override and v['id'] != narrator_voice
-                              and v.get('role', 'both') in {'both', 'character'}]
-            if gender == 'unknown':
-                neutral = [v for v in candidates if v.get('gender') in {'neutral', 'unknown'}]
-                candidates = neutral or candidates
-            if candidates:
-                candidates = sorted(candidates, key=lambda v: v['id'])
-                eligible = {v['id'] for v in candidates}
-                previous = old.get('voice') if isinstance(old, dict) else None
-                voice = previous if previous in eligible else candidates[int.from_bytes(digest[:4], 'big') % len(candidates)]['id']
-            else:
-                voice = None
-            profile = {'name': span.speaker, 'gender': gender, 'kind': kind,
-                       'voice': voice, 'pitch': 0,
-                       'seed': int.from_bytes(digest[2:6], 'big') % 2147483647}
-            saved[key] = result[key] = profile
-        if result:
-            CAST_FILE.parent.mkdir(parents=True, exist_ok=True)
-            temporary = CAST_FILE.with_suffix('.tmp')
-            temporary.write_text(json.dumps(saved, ensure_ascii=False, indent=2))
-            temporary.replace(CAST_FILE)
-        return result
+Abra **http://127.0.0.1:8765**. Encerre com **Ctrl+C**. O servidor não deve ser exposto à internet ou à rede local.
 
+O processamento de diálogos por inteligência artificial requer o **Ollama** instalado localmente e o modelo `qwen3:4b-instruct-2507-q4_K_M`. O backend usa a porta de loopback `11435` e pode preparar o modelo na primeira análise. Instalação do Ollama: https://ollama.com/download . Sem o Ollama, a análise pode recorrer à segmentação conservadora do texto.
 
-def build_units(scene: Scene, narrator_voice: str, limit: int = 240, style: str = 'neutral') -> list[Unit]:
-    from .brazilian import voice_catalog
-    profiles = _profiles(scene, voice_catalog(), narrator_voice)
-    missing = sorted({span.speaker for span in scene.spans if span.text and span.kind == 'dialogue'
-                      and not profiles.get(identity(span.speaker), {}).get('voice')})
-    if missing:
-        raise ValueError('Falta uma voz de personagem compatível para: ' + ', '.join(missing) +
-                         '. Importe ou classifique outra gravação como Personagem ou Ambos, '
-                         'com gênero e tipo compatíveis. A voz selecionada do narrador é reservada à narração.')
-    units = []
-    for span in scene.spans:
-        if not span.text:
-            continue
-        profile = profiles.get(identity(span.speaker), {})
-        gender = profile.get('gender', span.gender)
-        voice = narrator_voice if span.kind != 'dialogue' else span.voice_override or profile['voice']
-        # Preserve the recorded timbre; pitch shifting made voices sound artificial.
-        pitch = 0.0
-        chunks = split_text(span.text, limit)
-        for chunk in chunks:
-            # A new exclamation in an otherwise playful speech can become a
-            # command without changing its speaker/reference.
-            delivery = span.delivery
-            if chunk.rstrip().endswith('!') and delivery in {'neutral', 'warm', 'playful'}:
-                delivery = 'urgent'
-            expr, pace, volume, gap = DELIVERY[delivery]
-            if style == 'storyteller':
-                expr = min(.8, expr + .12)
-            elif style == 'calm':
-                expr = max(.25, expr - .10)
-            # Show the actual casting rather than only the inferred speaker.
-            span.voice_id = voice
-            units.append(Unit(chunk, span.speaker, voice, gender, delivery, pitch,
-                              pace, volume, expr, gap,
-                              int(profile.get('seed', 42)), span.id))
-    return units
+Para reiniciar os serviços locais e o analisador Ollama usando o script de desenvolvimento, execute `./reiniciar.sh` depois de configurar o ambiente.
 
-### Volume consistente entre vozes
+## Narração e biblioteca
 
-Cada trecho sintetizado, incluindo o narrador, é normalizado antes da montagem. A referência é a sonoridade percebida (alvo de −18 LUFS), com controle de pico de −1,5 dBTP. Falas muito curtas usam um ajuste por energia com margem de pico quando a medição integrada não é possível. Silêncio não é amplificado. A normalização não altera duração, altura ou velocidade.
+1. Adicione uma gravação brasileira autorizada à biblioteca de vozes. O estúdio só usa referências importadas e registradas pelo usuário.
+2. Cole uma cena de até 10.000 caracteres e escolha uma voz de narrador.
+3. Clique em **Analisar texto e escolher vozes**. Confira os personagens detectados, as vozes e as falas.
+4. Gere o áudio e use o player para ouvir ou baixar o WAV.
 
-As emoções continuam guiando a expressividade e as pausas, mas deixam de multiplicar o volume de cada personagem. O nivelamento vale para novas gerações e para o WAV baixado; arquivos antigos precisam ser gerados novamente. A velocidade de exportação é aplicada depois desse nivelamento.
+A biblioteca permite classificar vozes como narrador, personagem ou ambos. O elenco pode memorizar escolhas para cenas futuras. Há controle de velocidade do arquivo exportado e nivelamento de volume por trecho. O ajuste de velocidade e a normalização dependem do FFmpeg.
+
+Os trabalhos ficam temporariamente na memória do servidor. O rascunho, as preferências e o identificador do trabalho ficam no armazenamento local do navegador. O histórico de áudio não sobrevive ao reinício do backend.
+
+## Extensão Chromium
+
+Carregue o diretório `extension/` em `chrome://extensions` com o **Modo do desenvolvedor** ativo. A extensão permite usar vozes do Chrome ou o motor local, sempre mediante ação do usuário.
+
+## Desenvolvimento e testes
+
+```bash
+npm --prefix frontend ci
+npm --prefix frontend run build
+node --test tests/extension.test.cjs
+backend/.venv-br/bin/python -m unittest discover -s tests -p 'test_*.py'
+```
+
+Os testes de interface usam Playwright para Python e o frontend compilado:
+
+```bash
+python -m pip install playwright
+python -m playwright install chromium
+npm --prefix frontend run build
+python -m unittest tests/test_playwright_studio.py
+```
+
+As verificações de API podem exigir `httpx`. O modelo de voz não é necessário para os testes de interface, que simulam respostas HTTP.
+
+## Segurança e arquivos locais
+
+O servidor utiliza `127.0.0.1`, não possui autenticação para acesso público e **não deve receber tráfego externo**. O frontend exige que o usuário escolha e envie referências de voz autorizadas. Modelos e gravações são armazenados em `backend/models/` e `backend/voices/`, ignorados pelo Git.
+
+Documentação: [Arquitetura](docs/ARCHITECTURE.md), [Roadmap](docs/ROADMAP.md) e [Licenças de terceiros](docs/THIRD_PARTY.md).

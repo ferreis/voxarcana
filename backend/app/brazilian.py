@@ -57,7 +57,7 @@ class BrazilianEngine:
         if self._model is not None:
             return self._model
         if not (MODEL_DIR / 't3_pt_br.safetensors').exists() or not (SOURCE_DIR / '__init__.py').exists():
-            raise RuntimeError('Modelo brasileiro não instalado. Execute bash scripts/setup-br.sh.')
+            raise RuntimeError('Modelo brasileiro não instalado. Execute ./start.')
         os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF', 'expandable_segments:True')
         import torch
         from .config import get_settings

@@ -222,7 +222,7 @@ def speech(request: SpeechRequest):
 @app.post('/v1/jobs', status_code=202)
 def create_job(request: SpeechRequest):
     if get_settings().engine != 'chatterbox-br':
-        raise HTTPException(409, 'Inicie o estúdio com bash scripts/start-studio.sh para usar o modelo brasileiro.')
+        raise HTTPException(409, 'Inicie o estúdio com ./start para usar o modelo brasileiro.')
     voice, style = validate_profile(request)
     try:
         job = queue.submit({'text': request.text, 'voice': voice, 'style': style,

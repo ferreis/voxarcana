@@ -3,7 +3,7 @@ set -euo pipefail
 VOXARCANA_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$VOXARCANA_ROOT"
 if [ ! -x backend/.venv-br/bin/python ]; then
-  echo "Prepare o ambiente primeiro: bash scripts/setup-br.sh" >&2
+  echo "Prepare o ambiente primeiro: ./start" >&2
   exit 1
 fi
 if ! command -v ollama >/dev/null; then

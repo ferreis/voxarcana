@@ -1,143 +1,79 @@
-"""Automatic, persistent casting and bounded delivery controls."""
-from dataclasses import dataclass
-import hashlib
-import json
-from pathlib import Path
-from threading import Lock
+# Roadmap
 
-from .scene import Scene, NARRATOR, identity
-from .tts import split_text
+## Fase 1 — MVP local
 
-CAST_FILE = Path(__file__).resolve().parents[1] / 'voices/cast.json'
-_lock = Lock()
+- [x] Criar estrutura do repositório.
+- [x] Criar API local.
+- [x] Criar integração inicial com Qwen3-TTS VoiceDesign.
+- [x] Criar extensão Chromium para texto selecionado.
+- [x] Executar o projeto em uma máquina real.
+- [ ] Validar CUDA/VRAM ou definir fallback.
+- [x] Gerar primeira amostra de narrador em português.
+- [x] Reforçar português brasileiro no perfil de voz.
+- [x] Separar voz de estilo de narração.
+- [x] Criar 10 estilos iniciais.
 
-# These guide the existing TTS and simple post-processing. They do not simulate
-# crying/laughter or promise exact acting from a reference-conditioned model.
-DELIVERY = {
-    'neutral': (.45, 1.0, 1.0, .18),
-    'warm': (.5, .98, 1.0, .20),
-    'playful': (.6, 1.03, 1.0, .15),
-    'firm': (.55, .97, 1.0, .24),
-    'urgent': (.65, 1.07, 1.0, .12),
-    'soft': (.35, .95, 1.0, .24),
-    'sad': (.4, .94, 1.0, .30),
-    'tense': (.45, .96, 1.0, .30),
-    'angry': (.65, 1.04, 1.0, .16),
-    'fear': (.5, 1.04, 1.0, .16),
-}
+## Estilos iniciais
 
+- [x] Fantasia Épica
+- [x] Terror
+- [x] Ação
+- [x] Suspense
+- [x] Mistério
+- [x] Calmo
+- [x] Detetive Noir
+- [x] Contador de Histórias
+- [x] Documentário
+- [x] Neutro
 
-@dataclass
-class Unit:
-    text: str
-    speaker: str
-    voice: str
-    gender: str
-    delivery: str
-    pitch: float
-    speed: float
-    gain: float
-    expression: float
-    pause: float
-    seed: int
-    source_id: int
+## Fase 2 — Voz persistente
 
+- [ ] Gerar múltiplos candidatos do Narrador BR.
+- [ ] Selecionar a voz final.
+- [ ] Salvar áudio de referência e transcrição.
+- [ ] Migrar geração principal para Qwen3-TTS Base + Voice Clone.
+- [ ] Cachear o voice clone prompt.
 
-def _profiles(scene, catalog, narrator_voice):
-    """Choose actual references, rechecking eligibility after library edits."""
-    with _lock:
-        try:
-            saved = json.loads(CAST_FILE.read_text())
-            if not isinstance(saved, dict):
-                saved = {}
-        except (OSError, ValueError):
-            saved = {}
-        result = {}
-        for span in scene.spans:
-            if span.kind != 'dialogue':
-                continue
-            key = identity(span.speaker)
-            digest = hashlib.sha256(key.encode()).digest()
-            old = saved.get(key, {})
-            gender = span.gender
-            kind = span.voice_kind
-            candidates = [v for v in catalog if v['id'] != narrator_voice
-                          and v.get('role', 'both') in {'both', 'character'}
-                          and v.get('kind', 'human') == kind
-                          and (gender == 'unknown' or v.get('gender', 'unknown') == gender)]
-            if span.voice_override:
-                candidates = [v for v in catalog if v['id'] == span.voice_override and v['id'] != narrator_voice
-                              and v.get('role', 'both') in {'both', 'character'}]
-            if gender == 'unknown':
-                neutral = [v for v in candidates if v.get('gender') in {'neutral', 'unknown'}]
-                candidates = neutral or candidates
-            if candidates:
-                candidates = sorted(candidates, key=lambda v: v['id'])
-                eligible = {v['id'] for v in candidates}
-                previous = old.get('voice') if isinstance(old, dict) else None
-                voice = previous if previous in eligible else candidates[int.from_bytes(digest[:4], 'big') % len(candidates)]['id']
-            else:
-                voice = None
-            profile = {'name': span.speaker, 'gender': gender, 'kind': kind,
-                       'voice': voice, 'pitch': 0,
-                       'seed': int.from_bytes(digest[2:6], 'big') % 2147483647}
-            saved[key] = result[key] = profile
-        if result:
-            CAST_FILE.parent.mkdir(parents=True, exist_ok=True)
-            temporary = CAST_FILE.with_suffix('.tmp')
-            temporary.write_text(json.dumps(saved, ensure_ascii=False, indent=2))
-            temporary.replace(CAST_FILE)
-        return result
+## Fase 3 — Extensão
 
+- [x] Criar janela com caixa de texto e configurações.
+- [x] Selecionar vozes PT-BR do Chrome ou perfil local.
+- [x] Selecionar estilo e descrição de voz personalizada.
+- [ ] Configurar atalho de teclado.
+- [x] Adicionar parar/pausar/continuar.
+- [x] Exibir erros de conexão com a API local.
+- [x] Salvar preferências e rascunho durante a sessão.
+- [x] Manter reprodução com o popup fechado.
 
-def build_units(scene: Scene, narrator_voice: str, limit: int = 240, style: str = 'neutral') -> list[Unit]:
-    from .brazilian import voice_catalog
-    profiles = _profiles(scene, voice_catalog(), narrator_voice)
-    missing = sorted({span.speaker for span in scene.spans if span.text and span.kind == 'dialogue'
-                      and not profiles.get(identity(span.speaker), {}).get('voice')})
-    if missing:
-        raise ValueError('Falta uma voz de personagem compatível para: ' + ', '.join(missing) +
-                         '. Importe ou classifique outra gravação como Personagem ou Ambos, '
-                         'com gênero e tipo compatíveis. A voz selecionada do narrador é reservada à narração.')
-    units = []
-    for span in scene.spans:
-        if not span.text:
-            continue
-        profile = profiles.get(identity(span.speaker), {})
-        gender = profile.get('gender', span.gender)
-        voice = narrator_voice if span.kind != 'dialogue' else span.voice_override or profile['voice']
-        # Preserve the recorded timbre; pitch shifting made voices sound artificial.
-        pitch = 0.0
-        chunks = split_text(span.text, limit)
-        for chunk in chunks:
-            # A new exclamation in an otherwise playful speech can become a
-            # command without changing its speaker/reference.
-            delivery = span.delivery
-            if chunk.rstrip().endswith('!') and delivery in {'neutral', 'warm', 'playful'}:
-                delivery = 'urgent'
-            expr, pace, volume, gap = DELIVERY[delivery]
-            if style == 'storyteller':
-                expr = min(.8, expr + .12)
-            elif style == 'calm':
-                expr = max(.25, expr - .10)
-            # Show the actual casting rather than only the inferred speaker.
-            span.voice_id = voice
-            units.append(Unit(chunk, span.speaker, voice, gender, delivery, pitch,
-                              pace, volume, expr, gap,
-                              int(profile.get('seed', 42)), span.id))
-    return units
+## Fase 4 — RPG
 
-### Volume consistente entre vozes
+- [x] Perfil base de narrador.
+- [ ] Perfil masculino.
+- [ ] Perfil feminino.
+- [ ] Cadastro de vozes por personagem.
+- [ ] Investigar identificação automática de diálogo.
+- [ ] Investigar leitura de metadados/HTML do site para identificar personagem.
 
-Cada trecho sintetizado, incluindo o narrador, é normalizado antes da montagem. A referência é a sonoridade percebida (alvo de −18 LUFS), com controle de pico de −1,5 dBTP. Falas muito curtas usam um ajuste por energia com margem de pico quando a medição integrada não é possível. Silêncio não é amplificado. A normalização não altera duração, altura ou velocidade.
+## Estúdio brasileiro em uma aba
 
-As emoções continuam guiando a expressividade e as pausas, mas deixam de multiplicar o volume de cada personagem. O nivelamento vale para novas gerações e para o WAV baixado; arquivos antigos precisam ser gerados novamente. A velocidade de exportação é aplicada depois desse nivelamento.
+- [x] Interface Vue 3 para texto, interpretação, reprodução e download.
+- [x] Modelo Chatterbox específico de PT-BR, em ambiente separado do Qwen.
+- [x] Referência masculina de corpus brasileiro aberto e referência feminina oficial.
+- [x] Cadastro local de gravação de referência autorizada.
+- [x] Fila de geração, andamento por trechos, cancelamento e recuperação ao reabrir a aba.
+- [x] Layouts para monitor, tablet e celular.
+- [ ] Aprovação da voz de narrador por escuta do jogador.
 
-## Normalização de sonoridade por trecho
+## Elenco automático e revisão
 
-`app/loudness.py` mede a sonoridade com `FFmpeg loudnorm` (EBU R128) e executa uma segunda passagem com as medições: alvo −18 LUFS, true peak −1,5 dBTP e LRA 11. Prioriza ganho linear quando possível, com controle de picos quando necessário. Entradas silenciosas são preservadas; trechos sem janela suficiente para loudness integrado usam energia ativa e limite de pico. Dados não finitos são rejeitados. O número de amostras e o sample rate são preservados.
-
-`BrazilianEngine` aplica essa etapa a cada trecho antes das pausas e da concatenação, tanto no elenco automático quanto na síntese simples do narrador. Não basta normalizar uma única vez o arquivo final, pois isso conservaria a diferença entre personagens. O ganho por emoção foi removido da aplicação; os controles de expressividade e pausas continuam. O ajuste global de velocidade do WAV continua posterior à montagem.
-
-- [x] Normalização por sonoridade percebida de cada trecho, incluindo narrador e personagens.
-- [x] Remover ganhos de volume por emoção, mantendo expressividade e pausas.
+- [x] Dividir cenas em segmentos de narração e diálogo sem alterar o texto original.
+- [x] Preparar interpretação de cena local por Ollama, com modo conservador de contingência.
+- [x] Permitir revisar falas e escolher vozes antes da geração.
+- [x] Registrar personagens e escolhas de voz para novas cenas.
+- [x] Adicionar metadados de papel, gênero e tipo à biblioteca.
+- [x] Limitar upload de referência e validar mídia com FFmpeg.
+- [x] Ajustar velocidade do WAV final preservando o tom.
+- [x] Normalizar volume por trecho e limitar picos.
+- [x] Oferecer entrada principal `./start`.
+- [ ] Validar qualidade das vozes e compatibilidade em diferentes GPUs.
+- [ ] Automatizar auditorias de dependências e ampliar testes de navegação com Playwright.
