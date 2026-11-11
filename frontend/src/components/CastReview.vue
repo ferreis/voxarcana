@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { Plus, Trash2 } from 'lucide-vue-next'
 import { studioApi, type SavedCharacter, type Scene, type Voice, type ReviewedLine } from '../services/studio'
 import { characterIdentity, findSavedCharacter, voiceUsedByAnother } from '../utils/characterVoices'
-const props = defineProps<{ scene: Scene; voices: Voice[]; narrator: string; disabled: boolean; stale: boolean }>()
+const props = defineProps<{ projectId: string; scene: Scene; voices: Voice[]; narrator: string; disabled: boolean; stale: boolean }>()
 const emit = defineEmits<{ change: [lines: ReviewedLine[] | null] }>()
 interface Actor { key: string; name: string; gender: string; voice: string; saved: boolean; savedId?: string }
 const actors = ref<Actor[]>([])
@@ -19,7 +19,7 @@ async function loadCharacters() {
   const requestNumber = ++characterRequest
   loadingCharacters.value = true; characterError.value = ''
   try {
-    const characters = await studioApi.characters()
+    const characters = await studioApi.characters(props.projectId)
     if (requestNumber === characterRequest) savedCharacters.value = characters
   } catch {
     if (requestNumber === characterRequest) characterError.value = 'Não consegui conferir as vozes do elenco salvo.'
@@ -108,7 +108,7 @@ watch(reviewedLines, lines => emit('change', lines), { immediate: true })
     <p v-if="characterError" class="error-message" role="alert">{{ characterError }} <button class="text-button" @click="loadCharacters">Tentar novamente</button></p>
     <fieldset :disabled="disabled || stale || loadingCharacters || !!characterError">
       <label v-if="dialogue.length" class="reuse-voice-option"><input v-model="allowUsedVoice" type="checkbox"> Usar voz já utilizada</label>
-      <p v-if="dialogue.length" class="field-help">Por padrão, vozes escolhidas por outros personagens da cena ou do elenco salvo ficam ocultas. Apelidos do mesmo personagem compartilham a voz.</p>
+      <p v-if="dialogue.length" class="field-help">Por padrão, vozes escolhidas por outros personagens da cena ou do elenco deste projeto ficam ocultas. Apelidos do mesmo personagem compartilham a voz.</p>
       <div v-for="(actor, index) in actors" :key="actor.key" class="actor-row" :class="{ 'saved-actor': actor.saved }">
         <div><label :for="`actor-name-${index}`">Personagem <span v-if="actor.saved" class="saved-badge">Salvo</span></label><input :id="`actor-name-${index}`" v-model="actor.name" maxlength="80"></div>
         <div><label :for="`actor-gender-${index}`">Gênero</label><select :id="`actor-gender-${index}`" v-model="actor.gender"><option value="unknown">Não identificado</option><option value="male">Masculino</option><option value="female">Feminino</option><option value="neutral">Neutro</option></select></div>
@@ -129,7 +129,7 @@ watch(reviewedLines, lines => emit('change', lines), { immediate: true })
 </template>
 
 <style scoped>
-.cast-additions { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; border-top: 1px solid #30392d; padding-top: 18px; margin-top: 8px; }
+.cast-additions { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--color-border); padding-top: 18px; margin-top: 8px; }
 .saved-character-picker { flex: 1; min-width: 220px; max-width: 430px; }
 .cast-additions > button { min-height: 42px; justify-content: center; }
 .new-actor-button { padding-inline: 8px; }

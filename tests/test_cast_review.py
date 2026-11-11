@@ -16,6 +16,9 @@ class CastReviewTest(unittest.TestCase):
     def setUp(self):
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
+        storage = patch('backend.app.audio_storage.DATA_DIR', Path(directory.name) / 'Data')
+        storage.start()
+        self.addCleanup(storage.stop)
         for target, filename in [('backend.app.characters.CHARACTER_FILE', 'characters.json'),
                                  ('backend.app.cast.CAST_FILE', 'cast.json')]:
             patched = patch(target, Path(directory.name) / filename)

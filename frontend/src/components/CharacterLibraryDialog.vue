@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { X, LoaderCircle } from 'lucide-vue-next'
 import { studioApi, type SavedCharacter, type Voice } from '../services/studio'
 import { voiceUsedByAnother } from '../utils/characterVoices'
-const props = defineProps<{ voices: Voice[] }>()
+const props = defineProps<{ projectId: string; voices: Voice[] }>()
 const dialog = ref<HTMLDialogElement | null>(null)
 const records = ref<SavedCharacter[]>([])
 const selected = ref('')
@@ -24,7 +24,7 @@ function choose(id: string) {
 }
 async function open() {
   dialog.value?.showModal(); busy.value = true; error.value = ''; notice.value = ''
-  try { records.value = await studioApi.characters(); choose(records.value[0]?.id || '') }
+  try { records.value = await studioApi.characters(props.projectId); choose(records.value[0]?.id || '') }
   catch (problem) { error.value = problem instanceof Error ? problem.message : 'Não consegui abrir o elenco.' }
   finally { busy.value = false }
 }
@@ -33,7 +33,7 @@ async function save() {
   if (!availableVoices.value.some(candidate => candidate.id === voice.value)) return
   busy.value = true; error.value = ''; notice.value = ''
   try {
-    const updated = await studioApi.updateCharacter(selected.value, { name: name.value.trim(), gender: gender.value, voice_id: voice.value,
+    const updated = await studioApi.updateCharacter(props.projectId, selected.value, { name: name.value.trim(), gender: gender.value, voice_id: voice.value,
       aliases: aliases.value.split(/[,\n]/).map(alias => alias.trim()).filter(Boolean) })
     records.value = records.value.map(r => r.id === selected.value ? updated : r)
     choose(updated.id); notice.value = 'Personagem salvo. Analise novamente o texto para aplicar os vínculos à cena.'
@@ -45,7 +45,7 @@ async function save() {
   <dialog ref="dialog" class="reference-dialog" aria-labelledby="character-library-title" @cancel="busy && $event.preventDefault()">
     <div class="dialog-heading"><span class="eyebrow">PERSONAGENS E SUAS VOZES</span><button class="icon-button" aria-label="Fechar elenco salvo" :disabled="busy" @click="dialog?.close()"><X :size="20" /></button></div>
     <h2 id="character-library-title">Elenco salvo.</h2>
-    <p>As escolhas ficam salvas neste computador, mesmo após reiniciar. Quando estes personagens voltarem, suas vozes e gênero serão reutilizados.</p>
+    <p>As escolhas ficam salvas neste projeto, mesmo após reiniciar. Em outro projeto, as mesmas vozes podem ser usadas por outros personagens.</p>
     <p v-if="busy" role="status"><LoaderCircle :size="16" class="spin" /> Carregando…</p>
     <p v-if="error" class="error-message" role="alert">{{ error }}</p>
     <template v-if="records.length">

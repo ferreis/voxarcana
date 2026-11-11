@@ -41,7 +41,9 @@ A geração usa o checkpoint dedicado `ResembleAI/Chatterbox-Multilingual-pt-br`
 
 Em **Adicionar voz**, também é possível colar um link de vídeo público do YouTube e informar o início em segundos, `mm:ss` ou `hh:mm:ss`. Clique em **Extrair 30 segundos** para ouvir o trecho, baixar somente o áudio WAV ou adicioná-lo à biblioteca com um nome e classificação. Escolha uma fala limpa e autorizada, sem música ou outras vozes. A extração usa internet, `yt-dlp` e FFmpeg no backend local; não usa o analisador de texto nem o modelo de voz. Vídeos privados, transmissões ao vivo e vídeos que exigem login não são suportados. O trecho precisa ter os 30 segundos completos disponíveis. Reinicie com `./start` após atualizar para instalar a dependência. Mudanças ou bloqueios do YouTube podem exigir atualizar `yt-dlp[default]` no ambiente Python.
 
-Os trabalhos ficam temporariamente na memória do servidor. O rascunho, as preferências e o identificador do trabalho ficam no armazenamento local do navegador. O histórico de áudio não sobrevive ao reinício do backend.
+Todos os áudios gerados são salvos automaticamente em `Data/`, na raiz do projeto, em formato WAV. Cada geração recebe um nome único, preservando as versões anteriores. Os arquivos permanecem nessa pasta após reiniciar o estúdio.
+
+Os trabalhos ficam temporariamente na memória do servidor. O rascunho, as preferências e o identificador do trabalho ficam no armazenamento local do navegador. Após reiniciar o backend, os trabalhos anteriores deixam de estar disponíveis no player; seus arquivos continuam em `Data/`.
 
 ## Extensão Chromium
 

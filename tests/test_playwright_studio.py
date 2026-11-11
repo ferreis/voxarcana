@@ -65,10 +65,11 @@ class StudioBrowserTests(unittest.TestCase):
                            "reference_audio": True, "voice_description": False, "locale": "pt-BR"},
             "/v1/voices": voice_items,
             "/v1/styles": [{"id": "neutral", "name": "Neutro"}],
+            "/v1/projects": [{"id": "default", "name": "Projeto inicial"}],
             "/v1/characters": [],
         }
         for endpoint, response in responses.items():
-            page.route(f"**{endpoint}", lambda route, request, payload=response:
+            page.route(f"**{endpoint}*", lambda route, request, payload=response:
                        route.fulfill(status=200, content_type="application/json", body=json.dumps(payload)))
         page.goto(self.url, wait_until="networkidle")
         return page
@@ -118,6 +119,56 @@ class StudioBrowserTests(unittest.TestCase):
             self.assertEqual(len(approvals), 1)
             self.assertEqual(approvals[0]["lines"], [])
             self.assertEqual(approvals[0]["voice"], "narrator-1")
+        finally:
+            page.close()
+
+    def test_configuracao_recolhivel_preserva_escolhas_e_permite_gerar(self):
+        page = self.open_studio(voices=[
+            {'id': 'narrator-1', 'name': 'Narrador', 'role': 'narrator'},
+            {'id': 'actor-1', 'name': 'Atriz', 'role': 'character', 'gender': 'female'},
+        ])
+        try:
+            self.mock_analysis(page, dialogue=True)
+            page.locator('#actor-voice-0').select_option('actor-1')
+            page.locator('#generation-speed').select_option('1.25')
+            page.locator('.analysis-settings > summary').click()
+            expect(page.locator('#actor-voice-0')).not_to_be_visible()
+            expect(page.get_by_role('button', name='Gerar áudio', exact=True)).to_be_enabled()
+            page.locator('.analysis-settings > summary').click()
+            expect(page.locator('#actor-voice-0')).to_have_value('actor-1')
+            expect(page.locator('#generation-speed')).to_have_value('1.25')
+        finally:
+            page.close()
+
+    def test_projetos_separam_rascunhos_e_recuperam_projeto_apos_reload(self):
+        page = self.open_studio()
+        project_records = [{'id': 'default', 'name': 'Projeto inicial'}]
+
+        def project_request(route):
+            if route.request.method == 'POST':
+                project_record = {'id': 'outro-projeto', 'name': route.request.post_data_json['name']}
+                project_records.append(project_record)
+                route.fulfill(status=201, json=project_record)
+            else:
+                route.fulfill(json=project_records)
+
+        page.route('**/v1/projects', project_request)
+        try:
+            page.locator('#narration-title').fill('Primeira cena')
+            page.locator('#narration-text').fill('Texto do projeto inicial.')
+            page.get_by_role('button', name='Novo projeto', exact=True).click()
+            page.locator('#new-project-name').fill('Outra campanha')
+            page.get_by_role('button', name='Criar projeto', exact=True).click()
+            expect(page.locator('#studio-project')).to_have_value('outro-projeto')
+            expect(page.locator('#narration-text')).to_have_value('')
+            page.locator('#narration-text').fill('Texto da outra campanha.')
+            page.locator('#studio-project').select_option('default')
+            expect(page.locator('#narration-text')).to_have_value('Texto do projeto inicial.')
+            expect(page.locator('#narration-title')).to_have_value('Primeira cena')
+            page.locator('#studio-project').select_option('outro-projeto')
+            page.reload(wait_until='networkidle')
+            expect(page.locator('#studio-project')).to_have_value('outro-projeto')
+            expect(page.locator('#narration-text')).to_have_value('Texto da outra campanha.')
         finally:
             page.close()
 
@@ -183,7 +234,7 @@ class StudioBrowserTests(unittest.TestCase):
             {'id': 'actor-2', 'name': 'Sulamita', 'role': 'character', 'gender': 'female'},
             {'id': 'actor-3', 'name': 'Bruna', 'role': 'character', 'gender': 'female'},
         ])
-        page.route('**/v1/characters', lambda route: route.fulfill(status=200,
+        page.route('**/v1/characters?*', lambda route: route.fulfill(status=200,
             content_type='application/json', body=json.dumps([
                 {'id': 'outra', 'name': 'Outra personagem', 'gender': 'female',
                  'voice_id': 'actor-3', 'aliases': [], 'available': True, 'voice_name': 'Bruna'}])))
@@ -225,7 +276,7 @@ class StudioBrowserTests(unittest.TestCase):
             {'id': 'lia', 'name': 'Lia', 'gender': 'female', 'voice_id': 'actor-2', 'aliases': [], 'voice_name': 'Carla', 'available': True},
         ]
         edits = []
-        page.route('**/v1/characters', lambda route: route.fulfill(status=200,
+        page.route('**/v1/characters?*', lambda route: route.fulfill(status=200,
             content_type='application/json', body=json.dumps(characters)))
 
         def save_aliases(route):
@@ -233,7 +284,7 @@ class StudioBrowserTests(unittest.TestCase):
             edits.append(changes)
             route.fulfill(status=200, content_type='application/json', body=json.dumps({**characters[0], **changes}))
 
-        page.route('**/v1/characters/lucasalmeida', save_aliases)
+        page.route('**/v1/characters/lucasalmeida?*', save_aliases)
         try:
             page.get_by_role('button', name='Elenco salvo · personagens e vozes').click()
             page.locator('#saved-character').select_option('lucasalmeida')
@@ -256,7 +307,7 @@ class StudioBrowserTests(unittest.TestCase):
         ])
         saved_character = {'id': 'garrin', 'name': 'Garrin', 'gender': 'male', 'voice_id': 'actor-2',
                            'aliases': ['Ferreiro'], 'voice_name': 'Leo', 'available': True}
-        page.route('**/v1/characters', lambda route: route.fulfill(status=200,
+        page.route('**/v1/characters?*', lambda route: route.fulfill(status=200,
             content_type='application/json', body=json.dumps([saved_character])))
         character_mutations = []
         page.on('request', lambda request: character_mutations.append(request.url)

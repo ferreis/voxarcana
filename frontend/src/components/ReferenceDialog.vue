@@ -56,29 +56,29 @@ async function submit() {
 
 <style scoped>
 .reference-dialog.voice-import-dialog { width: min(1040px, calc(100vw - 48px)); padding: 0; }
-.import-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 25px 30px 22px; border-bottom: 1px solid #3b4735; }
+.import-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 25px 30px 22px; border-bottom: 1px solid var(--color-border); }
 .import-heading h2 { display: flex; align-items: center; gap: 11px; font: 25px/1.3 var(--font-display); margin: 0; }
-.import-heading h2 svg { color: #cdb58a; flex-shrink: 0; }
-.import-heading p { color: #a9b79e; font-size: 12px; line-height: 1.6; margin: 8px 0 0; }
+.import-heading h2 svg { color: var(--color-primary-soft); flex-shrink: 0; }
+.import-heading p { color: var(--color-muted); font-size: 12px; line-height: 1.6; margin: 8px 0 0; }
 .import-heading .icon-button { flex-shrink: 0; }
-.import-modes { display: flex; gap: 18px; padding: 0 30px; border-bottom: 1px solid #3b4735; }
-.import-modes button { padding: 14px 2px; border: 0; border-bottom: 2px solid transparent; background: none; color: #a9b79e; cursor: pointer; }
-.import-modes button.active { color: #e6d1a8; border-color: #cdb58a; }
+.import-modes { display: flex; gap: 18px; padding: 0 30px; border-bottom: 1px solid var(--color-border); }
+.import-modes button { padding: 14px 2px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--color-muted); cursor: pointer; }
+.import-modes button.active { color: var(--color-primary-soft); border-color: var(--color-primary-soft); }
 .import-columns { display: grid; grid-template-columns: minmax(250px, .85fr) minmax(0, 1.4fr); }
 .voice-profile, .voice-source { padding: 24px 30px 28px; min-width: 0; }
-.voice-source { border-left: 1px solid #3b4735; }
-.import-columns h3 { font-size: 13px; font-weight: 600; color: #dce2d1; margin: 0 0 22px; }
+.voice-source { border-left: 1px solid var(--color-border); }
+.import-columns h3 { font-size: 13px; font-weight: 600; color: var(--color-paper); margin: 0 0 22px; }
 .voice-profile :deep(.voice-fields) { grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 16px; }
 .import-upload { flex-direction: row; justify-content: flex-start; text-align: left; gap: 16px; padding: 18px; margin: 0; }
-.import-upload > svg { flex-shrink: 0; color: #c9b78d; }
+.import-upload > svg { flex-shrink: 0; color: var(--color-primary-soft); }
 .upload-copy { display: block; min-width: 0; }
-.upload-copy strong { display: block; font-size: 12px; font-weight: 500; color: #dbe2cf; }
+.upload-copy strong { display: block; font-size: 12px; font-weight: 500; color: var(--color-paper); }
 .upload-copy > span { display: block; margin-top: 5px; font-size: 10px; line-height: 1.6; }
 .import-error { padding: 0 30px 16px; margin: 0; }
-.import-footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 30px; border-top: 1px solid #3b4735; position: sticky; bottom: 0; background: #172219; }
+.import-footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 30px; border-top: 1px solid var(--color-border); position: sticky; bottom: 0; background: var(--color-surface); }
 .import-footer > div { min-width: 0; }
-.selected-recording { display: block; color: #d4ddc6; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
-.recording-placeholder, .import-footer p { color: #99a78e; font-size: 11px; line-height: 1.5; }
+.selected-recording { display: block; color: var(--color-paper); font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.recording-placeholder, .import-footer p { color: var(--color-muted); font-size: 11px; line-height: 1.5; }
 .import-footer p { margin: 4px 0 0; }
 .import-footer button { flex-shrink: 0; }
 @media (max-width: 767px) {
@@ -86,7 +86,7 @@ async function submit() {
   .import-heading { padding: 20px; }
   .import-columns { grid-template-columns: minmax(0, 1fr); }
   .voice-profile, .voice-source { padding: 20px; }
-  .voice-source { border-left: 0; border-top: 1px solid #3b4735; }
+  .voice-source { border-left: 0; border-top: 1px solid var(--color-border); }
   .voice-profile :deep(.voice-fields) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .voice-profile :deep(.voice-fields > div:first-child) { grid-column: 1/-1; }
   .import-footer { padding: 15px 20px; flex-wrap: wrap; gap: 12px; }

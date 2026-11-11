@@ -24,16 +24,16 @@ const audioLabel = computed(() => props.job.status === 'done' ? 'Áudio pronto' 
 </template>
 
 <style scoped>
-.process-progress { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 32px; border-top: 1px solid #35412f; padding-top: 22px; margin-top: 24px; }
+.process-progress { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 32px; border-top: 1px solid var(--color-border); padding-top: 22px; margin-top: 24px; }
 .process-progress > p { grid-column: 1/-1; margin: 0; }
 .progress-phase:only-child, .process-progress > p + .progress-phase { grid-column: 1/-1; }
-.analysis-progress summary, .audio-progress-label { min-height: 40px; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin: 0; color: #dbe1d1; font-size: 12px; }
+.analysis-progress summary, .audio-progress-label { min-height: 40px; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin: 0; color: var(--color-paper); font-size: 12px; }
 .analysis-progress summary { cursor: pointer; list-style: none; }
 .analysis-progress summary::-webkit-details-marker { display: none; }
-.progress-phase small { display: block; color: #95a38c; font-size: 10px; font-weight: 400; line-height: 1.5; margin-top: 5px; }
-.progress-phase strong { color: #d0bc91; font-size: 12px; font-variant-numeric: tabular-nums; }
-.process-track { height: 5px; border-radius: 4px; margin-top: 12px; background: #2a3527; overflow: hidden; }
-.process-track > span { display: block; height: 100%; border-radius: inherit; background: #c9b68c; transition: width .4s; }
-.analysis-log { font-size: 11px; line-height: 1.7; color: #a6b29c; padding-top: 12px; }
+.progress-phase small { display: block; color: var(--color-muted); font-size: 10px; font-weight: 400; line-height: 1.5; margin-top: 5px; }
+.progress-phase strong { color: var(--color-primary-soft); font-size: 12px; font-variant-numeric: tabular-nums; }
+.process-track { height: 5px; border-radius: 4px; margin-top: 12px; background: var(--color-surface-raised); overflow: hidden; }
+.process-track > span { display: block; height: 100%; border-radius: inherit; background: var(--color-primary); transition: width .4s; }
+.analysis-log { font-size: 11px; line-height: 1.7; color: var(--color-muted); padding-top: 12px; }
 @media (max-width: 767px) { .process-progress { grid-template-columns: minmax(0, 1fr); gap: 22px; } }
 </style>

@@ -4,8 +4,9 @@ export interface Style { id: string; name: string }
 export interface Engine { id: string; name: string; locale: string; installed: boolean; reference_audio: boolean; voice_description: boolean }
 export interface SceneSegment { id: number; kind: string; text: string; speaker: string; gender: string; voice_id?: string; character_saved?: boolean; delivery: string; channel?: 'none' | 'radio' | 'television' }
 export interface Scene { method: string; warning: string | null; segments: SceneSegment[] }
-export interface Job { id: string; status: 'review' | 'queued' | 'running' | 'cancelling' | 'cancelled' | 'done' | 'error'; completed: number; total: number; error: string | null; source_text?: string | null; analysis_percent?: number; analysis_events?: string[]; stage?: string; scene?: Scene | null; speaker?: string | null; delivery?: string | null }
-export interface Speech { text: string; voice: string; style: string; automatic?: boolean; review?: boolean; speed?: number }
+export interface Job { project_id?: string; id: string; status: 'review' | 'queued' | 'running' | 'cancelling' | 'cancelled' | 'done' | 'error'; completed: number; total: number; error: string | null; source_text?: string | null; analysis_percent?: number; analysis_events?: string[]; stage?: string; scene?: Scene | null; speaker?: string | null; delivery?: string | null }
+export interface Project { id: string; name: string }
+export interface Speech { project_id?: string; text: string; voice: string; style: string; automatic?: boolean; review?: boolean; speed?: number }
 
 export interface ReviewedLine { id: number; speaker: string; gender: string; voice_id: string }
 
@@ -44,8 +45,10 @@ export const studioApi = {
     }
     return response.blob()
   },
-  characters: () => request<SavedCharacter[]>('/v1/characters'),
-  updateCharacter: (id: string, character: { name: string; gender: string; voice_id: string; aliases?: string[] }) => request<SavedCharacter>(`/v1/characters/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(character) }),
+  projects: () => request<Project[]>('/v1/projects'),
+  createProject: (name: string) => request<Project>('/v1/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
+  characters: (projectId: string) => request<SavedCharacter[]>(`/v1/characters?project_id=${encodeURIComponent(projectId)}`),
+  updateCharacter: (projectId: string, id: string, character: { name: string; gender: string; voice_id: string; aliases?: string[] }) => request<SavedCharacter>(`/v1/characters/${encodeURIComponent(id)}?project_id=${encodeURIComponent(projectId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(character) }),
   engine: () => request<Engine>('/v1/engine'),
   voices: () => request<Voice[]>('/v1/voices'),
   styles: () => request<Style[]>('/v1/styles'),

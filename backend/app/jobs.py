@@ -9,11 +9,13 @@ import copy
 
 from .brazilian import SpeechCancelled
 from .tts import get_engine
+from .audio_storage import save_generated_audio
 
 
 @dataclass
 class Job:
     id: str
+    project_id: str = 'default'
     status: str = 'queued'
     completed: int = 0
     total: int = 0
@@ -31,7 +33,7 @@ class Job:
     cancel: Event = field(default_factory=Event)
 
     def public(self):
-        return {'id': self.id, 'status': self.status, 'completed': self.completed,
+        return {'id': self.id, 'project_id': self.project_id, 'status': self.status, 'completed': self.completed,
                 'total': self.total, 'error': self.error, 'stage': self.stage,
                 'analysis_percent': self.analysis_percent, 'analysis_events': list(self.analysis_events),
                 'source_text': self.review_payload.get('text') if self.review_payload else None,
@@ -54,7 +56,7 @@ class JobQueue:
                     self.jobs.pop(job.id, None)
             if sum(job.status in {'queued', 'running', 'cancelling'} for job in self.jobs.values()) >= 3:
                 raise ValueError('Já há três narrações na fila. Aguarde ou cancele uma delas.')
-            job = Job(id=str(uuid4()))
+            job = Job(id=str(uuid4()), project_id=payload.get('project_id', 'default'))
             self.jobs[job.id] = job
             self.pool.submit(self._run, job, payload)
             return job
@@ -84,6 +86,7 @@ class JobQueue:
                     return
                 job.status = 'running'
             payload = dict(payload)
+            payload.pop('project_id', None)
             review = payload.pop('review', False)
             if review:
                 from .scene import get_reader
@@ -91,7 +94,7 @@ class JobQueue:
                 scene = get_reader().analyze(payload['text'], job.cancel.is_set, on_progress=on_analysis)
                 from .characters import apply_saved
                 from .brazilian import voice_catalog
-                scene = apply_saved(scene, payload['voice'], voice_catalog())
+                scene = apply_saved(scene, payload['voice'], voice_catalog(), job.project_id)
                 with self.lock:
                     if job.cancel.is_set():
                         job.status = 'cancelled'
@@ -110,6 +113,7 @@ class JobQueue:
                 if job.cancel.is_set():
                     job.status = 'cancelled'
                 else:
+                    save_generated_audio(audio)
                     job.audio, job.status = audio, 'done'
         except SpeechCancelled:
             with self.lock:
@@ -154,7 +158,7 @@ class JobQueue:
                 span.voice_id = line.voice_id
                 span.voice_override = line.voice_id
             from .characters import remember_review
-            remember_review(job.review_scene, scene)
+            remember_review(job.review_scene, scene, job.project_id)
             payload = {**job.review_payload, 'voice': narrator_voice, 'style': style,
                        'automatic': True, 'scene': scene,
                        'speed': speed if speed is not None else job.review_payload.get('speed', 1.0)}

@@ -80,14 +80,14 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.youtube-audio-clip { border-top: 1px solid #3f4937; margin-top: 22px; padding-top: 20px; }
-.youtube-audio-clip h3 { font-size: 12px; font-weight: 500; color: #c8b991; margin: 0 0 16px; }
+.youtube-audio-clip { border-top: 1px solid var(--color-border); margin-top: 22px; padding-top: 20px; }
+.youtube-audio-clip h3 { font-size: 12px; font-weight: 500; color: var(--color-primary-soft); margin: 0 0 16px; }
 .youtube-audio-clip > label { display: block; margin: 0 0 9px; }
 .clip-extraction-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; margin-top: 16px; }
 .clip-extraction-row > div { min-width: 0; }
 .clip-extract-button { min-height: 42px; justify-content: center; }
-.clip-help { font-size: 10px; line-height: 1.6; color: #9dab95; margin: 9px 0 0; }
-.youtube-clip-result { border-top: 1px solid #35412f; margin-top: 18px; padding-top: 4px; }
+.clip-help { font-size: 10px; line-height: 1.6; color: var(--color-muted); margin: 9px 0 0; }
+.youtube-clip-result { border-top: 1px solid var(--color-border); margin-top: 18px; padding-top: 4px; }
 .clip-playback { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .clip-playback audio { flex: 1; min-width: 190px; width: 0; height: 40px; }
 .clip-playback a { flex-shrink: 0; min-height: 40px; text-decoration: none; justify-content: center; }

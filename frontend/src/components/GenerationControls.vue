@@ -56,15 +56,15 @@ const guidance = computed(() => props.busy ? `${props.elapsedLabel} decorridos`
 </template>
 
 <style scoped>
-.generation-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: center; border-block: 1px solid #3c4938; padding: 22px 0; margin-top: 28px; }
+.generation-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: center; border-block: 1px solid var(--color-border); padding: 22px 0; margin-top: 28px; }
 .generation-overview { display: flex; align-items: center; gap: 16px; min-width: 0; }
 .generation-feedback { min-width: 0; }
-.generation-label { display: flex; align-items: center; gap: 7px; color: #b4bdab; font-size: 10px; margin-bottom: 8px; }
-.generation-label > span { width: 6px; height: 6px; border-radius: 50%; background: #7c8c74; }
-.generation-label .working { background: #d4bd91; box-shadow: 0 0 0 3px #d4bd9115; }
+.generation-label { display: flex; align-items: center; gap: 7px; color: var(--color-text-secondary); font-size: 10px; margin-bottom: 8px; }
+.generation-label > span { width: 6px; height: 6px; border-radius: 50%; background: var(--color-muted); }
+.generation-label .working { background: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-glow); }
 .generation-label .complete { background: #b0c59a; }
-.generation-feedback strong { display: block; color: #e1e6d9; font-size: 14px; font-weight: 500; line-height: 1.5; }
-.generation-feedback p { font-size: 11px; line-height: 1.6; color: #a2af98; margin: 5px 0 0; }
+.generation-feedback strong { display: block; color: var(--color-paper); font-size: 14px; font-weight: 500; line-height: 1.5; }
+.generation-feedback p { font-size: 11px; line-height: 1.6; color: var(--color-muted); margin: 5px 0 0; }
 .generation-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .generation-options button { min-height: 46px; justify-content: center; padding: 12px 16px; font-size: 12px; }
 .generation-options button > span { margin: 0; }

@@ -17,6 +17,7 @@ from .tts import get_engine
 from .voices import VOICE_PROFILES
 from .brazilian import voice_catalog, reference_path, REFERENCE_DIR, MODEL_DIR
 from .jobs import queue
+from .audio_storage import save_generated_audio
 from .reference_audio import MAX_UPLOAD_BYTES, normalize_reference
 from .youtube_audio import ExtractionBusy, canonical_video_url, extract_youtube_audio
 
@@ -40,6 +41,7 @@ async def local_origin(request, call_next):
 
 
 class SpeechRequest(BaseModel):
+    project_id: str = Field(default='default', max_length=36)
     text: str = Field(min_length=1, max_length=10_000)
     voice: str = ''
     style: str = 'neutral'
@@ -238,6 +240,7 @@ def speech(request: SpeechRequest):
                 voice_id=voice, style_id=style, custom_instruction=request.instruction))
             from .audio_speed import change_speed
             audio = change_speed(audio, request.speed)
+        save_generated_audio(audio)
     except Exception as error:
         logging.getLogger(__name__).exception('Falha ao gerar áudio TTS')
         raise HTTPException(500, f'Não foi possível gerar a narração: {error}') from error
@@ -246,11 +249,12 @@ def speech(request: SpeechRequest):
 
 @app.post('/v1/jobs', status_code=202)
 def create_job(request: SpeechRequest):
+    validate_project(request.project_id)
     if get_settings().engine != 'chatterbox-br':
         raise HTTPException(409, 'Inicie o estúdio com ./start para usar o modelo brasileiro.')
     voice, style = validate_profile(request)
     try:
-        job = queue.submit({'text': request.text, 'voice': voice, 'style': style,
+        job = queue.submit({'text': request.text, 'voice': voice, 'style': style, 'project_id': request.project_id,
                             'automatic': request.automatic, 'speed': request.speed, **({'review': True} if request.review else {})})
     except ValueError as error:
         raise HTTPException(429, str(error)) from error
@@ -271,17 +275,53 @@ class CharacterRequest(BaseModel):
         return value.strip()
 
 
+def validate_project(project_id):
+    from .projects import require_project
+    try:
+        require_project(project_id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
+
+
+class ProjectRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+    @field_validator('name')
+    @classmethod
+    def nonblank(cls, name):
+        if not name.strip():
+            raise ValueError('Dê um nome ao projeto.')
+        return name.strip()
+
+
+@app.get('/v1/projects')
+def projects():
+    from .projects import list_projects
+    return list_projects()
+
+
+@app.post('/v1/projects', status_code=201)
+def add_project(request: ProjectRequest):
+    from .projects import create_project
+    try:
+        return create_project(request.name)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+
+
 @app.get('/v1/characters')
-def characters():
+def characters(project_id: str = 'default'):
+    validate_project(project_id)
     from .characters import list_characters
-    return list_characters(voice_catalog())
+    return list_characters(voice_catalog(), project_id)
 
 
 @app.patch('/v1/characters/{record_id}')
-def edit_character(record_id: str, request: CharacterRequest):
+def edit_character(record_id: str, request: CharacterRequest, project_id: str = 'default'):
+    validate_project(project_id)
     from .characters import update_character
     try:
-        return update_character(record_id, request.name, request.gender, request.voice_id, voice_catalog(), aliases=request.aliases)
+        return update_character(record_id, request.name, request.gender, request.voice_id, voice_catalog(), aliases=request.aliases, project_id=project_id)
     except LookupError as error:
         raise HTTPException(404, str(error)) from error
     except ValueError as error:

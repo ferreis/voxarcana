@@ -87,7 +87,7 @@ class StudioApiTest(unittest.TestCase):
         with patch('backend.app.main.queue.submit', return_value=SimpleNamespace(id='job')) as submit:
             response = self.client.post('/v1/jobs', json={'text': ' Uma cena. ', 'style': 'epic'})
             self.assertEqual(response.status_code, 202)
-            submit.assert_called_once_with({'text': 'Uma cena.', 'voice': 'imported-narrator', 'style': 'epic', 'automatic': True, 'speed': 1.0})
+        submit.assert_called_once_with({'text': 'Uma cena.', 'voice': 'imported-narrator', 'style': 'epic', 'project_id': 'default', 'automatic': True, 'speed': 1.0})
 
     def test_dialogue_without_interpretation_only_requires_narrator(self):
         with patch('backend.app.main.queue.submit', return_value=SimpleNamespace(id='job')) as submit:

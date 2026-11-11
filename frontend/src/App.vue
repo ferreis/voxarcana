@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { AudioLines, BookOpen, CircleHelp, FileText, Mic2, Sparkles, SlidersHorizontal, UsersRound } from 'lucide-vue-next'
+import ProjectSelector from './components/ProjectSelector.vue'
+import AudioSettings from './components/AudioSettings.vue'
 import CharacterLibraryDialog from './components/CharacterLibraryDialog.vue'
 import CastReview from './components/CastReview.vue'
 import GenerationControls from './components/GenerationControls.vue'
@@ -14,7 +16,7 @@ import ReferenceDialog from './components/ReferenceDialog.vue'
 import { useStudio } from './composables/useStudio'
 useExclusiveAudio()
 const studio = useStudio()
-const { text, title, voice, style, speed, voices, engine, connected, busy, canPerform, job, narrationOnly, error,
+const { projectId, projects, text, title, voice, style, speed, voices, engine, connected, busy, canPerform, job, narrationOnly, error,
   notice, audioUrl, audioTitle, elapsed, words, selectedVoice, status } = studio
 const referenceDialog = ref<InstanceType<typeof ReferenceDialog> | null>(null)
 const characterDialog = ref<InstanceType<typeof CharacterLibraryDialog> | null>(null)
@@ -51,6 +53,7 @@ function example() {
         <section v-if="showHelp" class="help-strip"><BookOpen :size="22" /><div><strong>Da sua imaginação para a mesa.</strong><p>Para usar apenas a voz do narrador, clique em Gerar só com narrador. Para separar as falas dos personagens, clique em Analisar texto e escolher vozes. Confira os personagens, corrija nomes e gênero e escolha uma voz para cada um antes de gerar. Depois, ouça ou baixe o WAV. Para outro timbre de narrador, adicione uma gravação brasileira de referência. Você não precisa cadastrar os personagens nem descrever suas emoções. Tudo é gerado neste computador, sem assinatura.</p></div><button class="text-button" @click="showHelp = false">Entendi</button></section>
         <div v-if="error" class="error-message error-banner" role="alert"><span>{{ error }}</span><button v-if="!connected || notice" class="text-button" @click="studio.reconnect">Reconectar</button></div>
         <p v-if="notice" class="muted small" role="status">{{ notice }}</p>
+        <ProjectSelector :projects="projects" :project-id="projectId" :disabled="busy" :create="studio.createProject" @select="studio.selectProject" />
         <div class="studio-layout">
           <section class="editor-section" aria-label="Texto da narração">
             <div class="section-heading editor-actions"><button class="text-button" :disabled="busy" @click="example"><Sparkles :size="14" /> Carregar exemplo</button></div>
@@ -63,21 +66,31 @@ function example() {
           <aside class="voice-panel" aria-label="Configurar narração">
             <div class="voice-identity"><span class="voice-orb" aria-hidden="true"><AudioLines :size="30" /></span><span class="voice-overline">FEITO PARA PT-BR</span></div>
             <div class="narrator-field"><label for="voice">Voz do narrador</label><div class="voice-controls"><select id="voice" v-model="voice" :disabled="busy || !voices.length"><option v-if="!narratorVoices.length" value="">{{ connected ? 'Adicione uma voz de narrador' : 'Carregando vozes…' }}</option><option v-for="item in narratorVoices" :key="item.id" :value="item.id">{{ item.name }}</option></select><button class="secondary-button compact-button" title="Classificar minhas vozes" aria-label="Classificar minhas vozes" :disabled="busy || !engine?.reference_audio" @click="libraryDialog?.open()"><SlidersHorizontal :size="17" /></button><button class="secondary-button compact-button" title="Elenco salvo · personagens e vozes" aria-label="Elenco salvo · personagens e vozes" :disabled="busy || !connected" @click="characterDialog?.open()"><UsersRound :size="17" /></button></div></div>
-            <div class="voice-setting"><label for="generation-speed">Velocidade do áudio gerado</label><select id="generation-speed" title="Aplicada ao WAV baixado" v-model.number="speed" :disabled="busy"><option :value="0.5">0,5×</option><option :value="0.75">0,75×</option><option :value="1">1×</option><option :value="1.1">1,1×</option><option :value="1.25">1,25×</option><option :value="1.5">1,5×</option><option :value="1.75">1,75×</option><option :value="2">2×</option></select></div>
-            <div class="voice-setting"><label for="acting">Atuação pelo contexto</label><select id="acting" v-model="style" :disabled="busy"><option value="neutral">Automática · equilibrada</option><option value="storyteller">Automática · mais expressiva</option><option value="calm">Automática · contida</option></select></div>
+            <AudioSettings v-if="narrationOnly || !job?.scene" v-model:speed="speed" v-model:style="style" :disabled="busy" />
             <div v-if="cast.length" class="cast-list" aria-label="Personagens identificados"><span v-for="name in cast" :key="name">{{ name }}</span></div>
           </aside>
         </div>
         <GenerationControls :can-start="canStart" :can-generate="canGenerate" :busy="busy" :narration-only="narrationOnly" :audio-started="audioStarted" :has-scene="!!job?.scene" :reviewing="job?.status === 'review'" :done="job?.status === 'done'" :cancelling="job?.status === 'cancelling'" :can-cancel="!!job" :status="status" :elapsed-label="elapsedLabel" @narrate="studio.narrate" @analyze="studio.analyze" @generate="generateAudio" @cancel="studio.cancel" />
-        <CastReview v-if="!narrationOnly && job?.scene && job.source_text != null" :key="job.id" :scene="job.scene" :voices="voices" :narrator="voice" :disabled="busy" :stale="job.source_text !== text.trim()" @change="reviewedLines = $event" />
+        <details v-if="!narrationOnly && job?.scene && job.source_text != null" :key="`${projectId}-${job.id}`" class="analysis-settings" open>
+          <summary>Configurar personagens e áudio</summary>
+          <CastReview :key="job.id" :project-id="projectId" :scene="job.scene" :voices="voices" :narrator="voice" :disabled="busy" :stale="job.source_text !== text.trim()" @change="reviewedLines = $event" />
+          <AudioSettings v-model:speed="speed" v-model:style="style" :disabled="busy" />
+        </details>
         <p v-if="job?.scene?.warning" class="analysis-notice" role="status">{{ job.scene.warning }}</p>
         <ScenePreview v-if="job?.scene?.segments.length" :scene="job.scene" :narrator-name="selectedVoice?.name" :voices="voices" />
         <GenerationProgress v-if="job" :job="job" :narration-only="narrationOnly" />
       </main>
       <footer class="page-footer"><span>VoxArcana <span class="footer-star">✦</span> Histórias ganham vida quando encontram uma voz.</span><button class="text-button" @click="showHelp = !showHelp">Como funciona <CircleHelp :size="13" /></button></footer>
     </div>
-    <CharacterLibraryDialog ref="characterDialog" :voices="voices" />
+    <CharacterLibraryDialog :key="projectId" :project-id="projectId" ref="characterDialog" :voices="voices" />
     <VoiceLibraryDialog ref="libraryDialog" :voices="voices" :save="studio.updateVoice" :remove="studio.deleteVoice" />
     <ReferenceDialog ref="referenceDialog" :save="studio.addReference" />
   </div>
 </template>
+
+<style scoped>
+.analysis-settings { margin: 24px 0; padding: 20px 0; border-block: 1px solid var(--color-border); }
+.analysis-settings > summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+.analysis-settings > summary:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+.analysis-settings :deep(.cast-review) { border-top: 0; padding-top: 0; }
+</style>

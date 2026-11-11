@@ -12,19 +12,30 @@ _lock = RLock()
 GENDERS = {'male', 'female', 'neutral', 'unknown'}
 
 
-def _write(records):
-    CHARACTER_FILE.parent.mkdir(parents=True, exist_ok=True)
-    temporary = CHARACTER_FILE.with_suffix(f'.{uuid4()}.tmp')
+def _character_file(project_id):
+    if project_id == 'default':
+        return CHARACTER_FILE
+    from uuid import UUID
+    return CHARACTER_FILE.parent / 'projects' / str(UUID(project_id)) / 'characters.json'
+
+
+def _write(records, project_id='default'):
+    character_file = _character_file(project_id)
+    character_file.parent.mkdir(parents=True, exist_ok=True)
+    temporary = character_file.with_suffix(f'.{uuid4()}.tmp')
     temporary.write_text(json.dumps(records, ensure_ascii=False, indent=2))
-    temporary.replace(CHARACTER_FILE)
+    temporary.replace(character_file)
 
 
-def _read():
-    if CHARACTER_FILE.exists():
-        data = json.loads(CHARACTER_FILE.read_text())
+def _read(project_id='default'):
+    character_file = _character_file(project_id)
+    if character_file.exists():
+        data = json.loads(character_file.read_text())
         if not isinstance(data, dict):
             raise ValueError('O elenco salvo está inválido. Confira voices/characters.json.')
         return data
+    if project_id != 'default':
+        return {}
     # Recover the most recent choices from installations predating this book.
     from .cast import CAST_FILE
     try:
@@ -39,7 +50,7 @@ def _read():
         if name and identity(name) not in {'narrador', 'personagem'} and profile.get('voice') and profile.get('gender') in GENDERS:
             records[identity(name)] = {'name': name, 'gender': profile['gender'],
                                       'voice_id': profile['voice'], 'aliases': []}
-    _write(records)
+    _write(records, project_id)
     return records
 
 
@@ -55,10 +66,10 @@ def _find(records, name):
     return matches[0] if len(matches) == 1 else None
 
 
-def list_characters(catalog):
+def list_characters(catalog, project_id='default'):
     voices = {v['id']: v for v in catalog}
     with _lock:
-        records = _read()
+        records = _read(project_id)
         result = []
         for key, record in records.items():
             voice = voices.get(record['voice_id'])
@@ -67,10 +78,10 @@ def list_characters(catalog):
         return sorted(result, key=lambda item: item['name'].casefold())
 
 
-def apply_saved(scene, narrator_voice, catalog):
+def apply_saved(scene, narrator_voice, catalog, project_id='default'):
     voices = {v['id']: v for v in catalog}
     with _lock:
-        records = _read()
+        records = _read(project_id)
         for span in scene.spans:
             if span.kind != 'dialogue' or not span.text:
                 continue
@@ -90,7 +101,7 @@ def apply_saved(scene, narrator_voice, catalog):
     return scene
 
 
-def remember_review(original, corrected):
+def remember_review(original, corrected, project_id='default'):
     originals = {s.id: s for s in original.spans}
     chosen = {}
     sources = {}
@@ -108,7 +119,7 @@ def remember_review(original, corrected):
         if identity(source) not in {'narrador', 'personagem', ''}:
             sources.setdefault(source, set()).add(key)
     with _lock:
-        records = _read()
+        records = _read(project_id)
         for key, value in chosen.items():
             existing = _find(records, value['name'])
             aliases = set(records.get(existing, {}).get('aliases', []))
@@ -122,10 +133,10 @@ def remember_review(original, corrected):
                         and SequenceMatcher(None, identity(source), key).ratio() >= .85):
                     aliases.add(source)
             records[key] = {**value, 'aliases': sorted(aliases)}
-        _write(records)
+        _write(records, project_id)
 
 
-def update_character(record_id, name, gender, voice_id, catalog, aliases=None):
+def update_character(record_id, name, gender, voice_id, catalog, aliases=None, project_id='default'):
     voice = next((v for v in catalog if v['id'] == voice_id), None)
     if not voice or voice.get('role', 'both') not in {'character', 'both'}:
         raise ValueError('Escolha uma voz classificada como Personagem ou Ambos.')
@@ -133,7 +144,7 @@ def update_character(record_id, name, gender, voice_id, catalog, aliases=None):
     if key in {'', 'narrador', 'personagem'}:
         raise ValueError('Escolha um nome de personagem válido.')
     with _lock:
-        records = _read()
+        records = _read(project_id)
         if record_id not in records:
             raise LookupError('Personagem não encontrado.')
         existing = _find(records, name)
@@ -161,5 +172,5 @@ def update_character(record_id, name, gender, voice_id, catalog, aliases=None):
         records.pop(record_id)
         records[key] = {'name': name, 'gender': gender, 'voice_id': voice_id,
                         'aliases': sorted(normalized_aliases.values())}
-        _write(records)
-    return next(record for record in list_characters(catalog) if record['id'] == key)
+        _write(records, project_id)
+    return next(record for record in list_characters(catalog, project_id) if record['id'] == key)
