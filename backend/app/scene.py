@@ -43,6 +43,7 @@ class Span:
     voice_id: str = ''
     voice_override: str = ''
     character_saved: bool = False
+    channel: str = 'none'
 
 
 @dataclass
@@ -67,6 +68,7 @@ class LineLabel(BaseModel):
     id: int = Field(ge=0)
     speaker: str = Field(min_length=1, max_length=80)
     delivery: DELIVERIES = 'neutral'
+    channel: Literal['none', 'radio', 'television'] = 'none'
 
 
 class SceneLabels(BaseModel):
@@ -111,7 +113,7 @@ def _script_regions(begin, end, text):
 
 # Restrict deterministic hints to named subjects/actions outside quotations.
 _NAME = r"[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ-]*(?: [A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ-]*){0,2}"
-_SPEECH = r"responde|respondeu|diz|disse|pergunta|perguntou|grita|gritou|sussurra|sussurrou|retruca|retrucou|comenta|comentou|pede|pediu"
+_SPEECH = r"responde|respondeu|diz|disse|pergunta|perguntou|grita|gritou|sussurra|sussurrou|retruca|retrucou|comenta|comentou|pede|pediu|dispara"
 _ACTION = _SPEECH + r"|cospe|sobe|aparece|segura|entra|sorri|olha|ergue|levanta|cruza|corre|ajusta|desce|encara|engole|recua|para|vira|aproxima"
 _SUBJECT = re.compile(r'\b(' + _NAME + r')\s+(?:' + _ACTION + r')\b')
 _POST_SPEAKER = re.compile(r'^[\s,.;:—–]*(' + _NAME + r')\s+(?:' + _SPEECH + r')\b')
@@ -144,7 +146,7 @@ def explicit_delivery(span, before, after, suggested):
     # A post-quote attribution describes the preceding speech only when it starts
     # with a reporting verb/pronoun; a newly acting character belongs to the next.
     post = after if re.match(r'^[\s,.;]*(?:ela|ele|' + _NAME + r')\s+(?:' + _SPEECH + r')\b', after, re.I) else ''
-    cues = (before + ' ' + post).casefold()
+    cues = (post or before).casefold()
     register = span.register
     if re.search(r'voz (?:sai )?baixa|risada grossa|voz (?:grave|grossa)', cues):
         register = 'low'
@@ -154,15 +156,26 @@ def explicit_delivery(span, before, after, suggested):
         return 'sad', register
     if re.search(r'cortante|ordem minha|é uma ordem|ordena', cues + ' ' + span.text.casefold()):
         return 'firm', register
-    if re.search(r'gritando|aos gritos|berrando|tagarela|numa respiração só|fala acelerada', cues):
+    if re.search(r'\b(?:grita|gritou|berrou|berra)\b|gritando|aos gritos|berrando|esbafor|tagarela|numa respiração só|fala acelerada', cues):
         return 'urgent', register
     if re.search(r'risada|rindo|brinca|provoca', cues):
         return 'playful', register
-    if re.search(r'sussurr|voz baixa|voz suave', cues):
+    if re.search(r'sussurr|voz baixa|voz suave|calmamente|em voz baixa', cues):
         return 'soft', register
     if re.search(r'\b(?:bonito|bonita|querido|querida)\b', span.text, re.I):
         return 'playful', register
     return suggested, register
+
+
+def explicit_channel(before, after):
+    # Only cues tied to the nearby speech, not a radio merely present in a scene.
+    medium = r'(?:rádio|radio|canal|comunicador|transmissor|televisão|televisao|tv)'
+    pre = re.search(r'(?:pelo|pela|no|na|via)\s+(?:o\s+|a\s+)?(' + medium + r')[^.!?\n]{0,40}:\s*$', before, re.I)
+    post = re.match(r'^[\s,.;]*(?:ele|ela|' + _NAME + r')\s+(?:' + _SPEECH + r')\s+(?:pelo|pela|no|na|via)\s+(?:o\s+|a\s+)?(' + medium + r')\b', after, re.I)
+    match = pre or post
+    if not match:
+        return 'none'
+    return 'television' if match.group(1).casefold() in {'televisão', 'televisao', 'tv'} else 'radio'
 
 
 def segment_text(text: str) -> list[Span]:
@@ -225,7 +238,7 @@ PROMPT = '''Você é um diretor de narração de RPG em português brasileiro. A
 A cena foi separada em trechos numerados. Não escreva nem reescreva o texto: identifique o falante e a intenção de CADA trecho.
 Regras:
 - Trechos kind=narration são SEMPRE do Narrador, mesmo se mencionarem personagens. Não transforme descrições em falas.
-- speaker_hint é uma atribuição extraída da narração ou de um rótulo explícito. Quando preenchido, use ESSE nome como falante e inclua-o em cast, mesmo se outro personagem é citado na fala.
+- speaker_hint é uma pista automática e pode estar errada ou desatualizada; confira a narração antes e depois de cada fala e prefira a atribuição explícita no contexto.
 - Trechos kind=dialogue são falas; descubra QUEM as diz pela narração antes E depois, atribuições ("X responde", "ela diz"), pronomes e continuidade do parágrafo.
 - Uma fala antes de "X responde" é de X. Se X chama Y dentro da fala, X CONTINUA falando: o destinatário não é o falante.
 - Aspas simples como 'cinzas' dentro da fala NÃO trocam o falante.
@@ -235,6 +248,7 @@ Regras:
 - Use o primeiro nome consistente para identificar cada personagem. Narrador é reservado à narração. Se não houver evidência do falante, use Personagem; não invente nomes.
 - voice_kind em cast: human para voz humana, robot para robô ou máquina explicitamente identificada, entity para entidade não humana com voz própria. Não classifique apenas pelo nome. Gênero neutral significa explicitamente sem gênero; unknown significa falta de pistas. Robôs e entidades também podem ter voz masculina ou feminina.
 - Em cast, gênero é male/female/neutral apenas quando sustentado pelo contexto; caso contrário unknown. register low/medium/high descreve o registro vocal sugerido pelas pistas (voz grossa, voz baixa, jovem etc.). Não confunda o gênero de quem é chamado com quem está falando.
+- channel para cada fala: radio ou television somente quando o contexto indicar que a própria fala é transmitida por rádio/canal ou televisão; caso contrário none. Um aparelho no ambiente ou personagem ouvindo rádio não basta.
 - delivery: neutral, warm (afeto), playful (brincadeira/provocação), firm (ordem/autoridade), urgent (pressa/grito), soft (voz baixa/intimidade), sad (fragilidade/tristeza), tense (tensão), angry (raiva), fear (medo/ansiedade).
 - A intenção pode MUDAR entre falas do mesmo personagem. Uma explicação acelerada e um pedido com voz quebrando não têm a mesma interpretação.
 - Em lines, rotule APENAS os IDs com kind=dialogue, TODOS eles. Preserve os IDs originais, não renumere. Não acrescente IDs. Em narration_delivery, escolha a intenção geral da narração. Liste em cast apenas personagens que falam, não o Narrador.
@@ -249,6 +263,7 @@ def conservative_scene(spans: list[Span]) -> Scene:
             before = spans[index - 1].text if index else ''
             after = spans[index + 1].text if index + 1 < len(spans) else ''
             span.delivery, span.register = explicit_delivery(span, before, after, 'neutral')
+            span.channel = explicit_channel(before, after)
     return Scene(spans, 'conservative', 'A análise completa não respondeu. Esta leitura usa as pistas explícitas do texto e vozes de personagem disponíveis para falas ambíguas.')
 
 
@@ -271,14 +286,17 @@ def apply_labels(spans: list[Span], labels: SceneLabels) -> Scene:
     missing = False
     for index, span in enumerate(spans):
         line = indexed.get(span.id)
-        if span.speaker_hint and span.kind == 'dialogue':
+        if span.speaker_hint and span.kind == 'dialogue' and not line:
             hinted = identity(span.speaker_hint)
             cast.setdefault(hinted, CastMember(name=span.speaker_hint))
-            line = LineLabel(id=span.id, speaker=span.speaker_hint, delivery=line.delivery if line else 'neutral')
+            line = LineLabel(id=span.id, speaker=span.speaker_hint)
         span.delivery = line.delivery if line else labels.narration_delivery
         if span.kind == 'narration':
             span.speaker = NARRATOR
         else:
+            before = spans[index - 1].text if index else ''
+            after = spans[index + 1].text if index + 1 < len(spans) else ''
+            span.channel = (line.channel if line and line.channel != 'none' else explicit_channel(before, after))
             member = cast.get(identity(line.speaker)) if line else None
             if member is None or identity(line.speaker) == identity(NARRATOR):
                 missing = True

@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { X, Upload, LoaderCircle, Mic2 } from 'lucide-vue-next'
 import VoiceFields from './VoiceFields.vue'
+import BatchVoiceImport from './BatchVoiceImport.vue'
 import YouTubeAudioClip from './YouTubeAudioClip.vue'
 import type { VoiceMetadata } from '../services/studio'
 const metadata = ref<VoiceMetadata>({ name: '', role: 'both', gender: 'unknown', kind: 'human' })
@@ -12,7 +13,9 @@ const file = ref<File | null>(null)
 const error = ref('')
 const busy = ref(false)
 const extracting = ref(false)
-const locked = computed(() => busy.value || extracting.value)
+const batchMode = ref(false)
+const batchBusy = ref(false)
+const locked = computed(() => busy.value || extracting.value || batchBusy.value)
 const clipSession = ref(0)
 defineExpose({ open: () => { error.value = ''; dialog.value?.showModal() } })
 function select(event: Event) { file.value = (event.target as HTMLInputElement).files?.[0] || null }
@@ -30,7 +33,9 @@ async function submit() {
 <template>
   <dialog ref="dialog" class="reference-dialog voice-import-dialog" aria-labelledby="reference-title" @cancel="locked && $event.preventDefault()">
     <div class="import-heading"><div><h2 id="reference-title"><Mic2 :size="22" /> Adicionar voz</h2><p>Português brasileiro · 3 a 50 segundos · fala limpa, sem música.</p></div><button class="icon-button" aria-label="Fechar" :disabled="locked" @click="dialog?.close()"><X :size="20" /></button></div>
-    <form @submit.prevent="submit">
+    <div class="import-modes"><button type="button" :class="{ active: !batchMode }" :disabled="locked" @click="batchMode = false">Uma voz</button><button type="button" :class="{ active: batchMode }" :disabled="locked" @click="batchMode = true">Importar em massa</button></div>
+    <BatchVoiceImport v-show="batchMode" :save="save" @busy="batchBusy = $event" @done="dialog?.close()" />
+    <form v-show="!batchMode" @submit.prevent="submit">
       <div class="import-columns">
         <section class="voice-profile" aria-labelledby="voice-profile-title">
           <h3 id="voice-profile-title">Identificação</h3>
@@ -56,6 +61,9 @@ async function submit() {
 .import-heading h2 svg { color: #cdb58a; flex-shrink: 0; }
 .import-heading p { color: #a9b79e; font-size: 12px; line-height: 1.6; margin: 8px 0 0; }
 .import-heading .icon-button { flex-shrink: 0; }
+.import-modes { display: flex; gap: 18px; padding: 0 30px; border-bottom: 1px solid #3b4735; }
+.import-modes button { padding: 14px 2px; border: 0; border-bottom: 2px solid transparent; background: none; color: #a9b79e; cursor: pointer; }
+.import-modes button.active { color: #e6d1a8; border-color: #cdb58a; }
 .import-columns { display: grid; grid-template-columns: minmax(250px, .85fr) minmax(0, 1.4fr); }
 .voice-profile, .voice-source { padding: 24px 30px 28px; min-width: 0; }
 .voice-source { border-left: 1px solid #3b4735; }

@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 def split_text(text: str, limit: int) -> list[str]:
     """Bound generation/decoding memory, preferring sentence and word boundaries."""
+    text = re.sub(r"\\[ \t]*(?=\r?\n|$)", "", text)
     chunks = []
     current = ""
     for sentence in re.split(r"(?<=[.!?;:])\s+|\n+", text.strip()):

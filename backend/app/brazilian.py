@@ -13,6 +13,8 @@ import soundfile as sf
 from .tts import split_text
 from .audio_speed import change_speed
 from .loudness import normalize_voice
+from .audio_silence import limit_silence
+from .audio_channel import apply_channel
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / 'models/chatterbox-ptbr'
@@ -163,7 +165,7 @@ class BrazilianEngine:
                     raise SpeechCancelled()
                 if index:
                     parts.append(np.zeros(int(model.sr * 0.15), dtype=np.float32))
-                parts.append(normalize_voice(wav.squeeze(0).detach().cpu().numpy(), model.sr))
+                parts.append(normalize_voice(limit_silence(wav.squeeze(0).detach().cpu().numpy(), model.sr), model.sr))
             if progress:
                 progress(len(chunks), len(chunks))
             output = BytesIO()
@@ -212,6 +214,8 @@ class BrazilianEngine:
             audio = wav.squeeze(0).detach().cpu().numpy()
             # Keep model output at its native pace and pitch. Phase-vocoder
             # stretching can make speech sound doubled or metallic.
+            audio = limit_silence(audio, model.sr)
+            audio = apply_channel(audio, model.sr, unit.channel)
             audio = normalize_voice(audio, model.sr)
             # Fade only the outer 5 ms to prevent clicks at voice switches.
             fade = min(int(model.sr * .005), len(audio) // 2)

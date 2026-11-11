@@ -22,6 +22,11 @@ class MemorySafeSpeechTest(unittest.TestCase):
         self.assertEqual(' '.join(' '.join(chunks).split()), ' '.join(text.split()))
         self.assertGreater(len(chunks), 1)
 
+    def test_line_end_backslash_is_not_sent_to_speech_model(self):
+        text = 'Primeira frase.\\\nSegunda frase com 0,3.'
+        self.assertEqual(split_text(text, 200), ['Primeira frase. Segunda frase com 0,3.'])
+        self.assertEqual(split_text('caminho\\arquivo', 200), ['caminho\\arquivo'])
+
     def test_chunking_handles_long_words_and_blank_text(self):
         self.assertEqual(split_text(' ', 100), [])
         self.assertEqual(''.join(split_text('a' * 301, 100)), 'a' * 301)

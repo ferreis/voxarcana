@@ -87,6 +87,19 @@ class SceneSegmentationTest(unittest.TestCase):
                          ['Personagem', 'Personagem'])
         self.assertEqual(conservative_scene(segment_text('Só a história.')).spans[0].speaker, NARRATOR)
 
+    def test_quoted_dialogue_and_model_can_correct_inferred_hint(self):
+        text = '\"Eu sei!\" Lise dispara. \\\n\"Descansar,\" Amira repete.'
+        spans = segment_text(text)
+        self.assertEqual(''.join(span.raw for span in spans), text)
+        lines = [span for span in spans if span.kind == 'dialogue']
+        self.assertEqual([span.text for span in lines], ['Eu sei!', 'Descansar,'])
+        labels = SceneLabels.model_validate({'cast': [{'name': 'Lise'}, {'name': 'Amira'}],
+            'lines': [{'id': lines[0].id, 'speaker': 'Lise'},
+                      {'id': lines[1].id, 'speaker': 'Amira'}]})
+        lines[1].speaker_hint = 'Lise'
+        apply_labels(spans, labels)
+        self.assertEqual([span.speaker for span in lines], ['Lise', 'Amira'])
+
     def test_invalid_ids_are_rejected(self):
         with self.assertRaises(ValueError):
             apply_labels(segment_text('"Olá"'), SceneLabels.model_validate({

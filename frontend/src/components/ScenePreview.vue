@@ -17,7 +17,7 @@ function voiceName(voiceId?: string) {
       <li v-for="(segment, segmentIndex) in scene.segments" :key="segment.id" :class="{ 'dialogue-segment': segment.kind === 'dialogue' }">
         <span class="segment-number" aria-hidden="true">{{ String(segmentIndex + 1).padStart(2, '0') }}</span>
         <div class="segment-content">
-          <div class="segment-heading"><strong>{{ segment.speaker }}</strong><span class="segment-voice">{{ segment.kind === 'narration' ? narratorName || 'Narrador' : voiceName(segment.voice_id) }}</span><span class="segment-delivery">{{ deliveryNames[segment.delivery] || 'Natural' }}</span></div>
+          <div class="segment-heading"><strong>{{ segment.speaker }}</strong><span class="segment-voice">{{ segment.kind === 'narration' ? narratorName || 'Narrador' : voiceName(segment.voice_id) }}</span><span class="segment-delivery">{{ deliveryNames[segment.delivery] || 'Natural' }}</span><span v-if="segment.channel && segment.channel !== 'none'" class="segment-delivery">{{ segment.channel === 'radio' ? 'Rádio' : 'Televisão' }}</span></div>
           <p>{{ segment.text }}</p>
         </div>
       </li>

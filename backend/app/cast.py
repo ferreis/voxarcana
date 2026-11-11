@@ -14,16 +14,16 @@ _lock = Lock()
 # These guide the existing TTS and simple post-processing. They do not simulate
 # crying/laughter or promise exact acting from a reference-conditioned model.
 DELIVERY = {
-    'neutral': (.45, 1.0, 1.0, .18),
-    'warm': (.5, .98, 1.0, .20),
-    'playful': (.6, 1.03, 1.0, .15),
-    'firm': (.55, .97, 1.0, .24),
-    'urgent': (.65, 1.07, 1.0, .12),
-    'soft': (.35, .95, 1.0, .24),
-    'sad': (.4, .94, 1.0, .30),
-    'tense': (.45, .96, 1.0, .30),
-    'angry': (.65, 1.04, 1.0, .16),
-    'fear': (.5, 1.04, 1.0, .16),
+    'neutral': (.50, 1.0, 1.0, .18),
+    'warm': (.65, .98, 1.0, .20),
+    'playful': (.95, 1.03, 1.0, .15),
+    'firm': (.80, .97, 1.0, .24),
+    'urgent': (1.15, 1.07, 1.0, .12),
+    'soft': (.30, .95, 1.0, .24),
+    'sad': (.40, .94, 1.0, .30),
+    'tense': (.75, .96, 1.0, .30),
+    'angry': (1.15, 1.04, 1.0, .16),
+    'fear': (1.0, 1.04, 1.0, .16),
 }
 
 
@@ -41,6 +41,7 @@ class Unit:
     pause: float
     seed: int
     source_id: int
+    channel: str = 'none'
 
 
 def _profiles(scene, catalog, narrator_voice):
@@ -113,16 +114,16 @@ def build_units(scene: Scene, narrator_voice: str, limit: int = 240, style: str 
             # A new exclamation in an otherwise playful speech can become a
             # command without changing its speaker/reference.
             delivery = span.delivery
-            if chunk.rstrip().endswith('!') and delivery in {'neutral', 'warm', 'playful'}:
+            if chunk.rstrip().endswith('!') and delivery == 'neutral':
                 delivery = 'urgent'
             expr, pace, volume, gap = DELIVERY[delivery]
             if style == 'storyteller':
-                expr = min(.8, expr + .12)
+                expr = min(1.4, expr + .15)
             elif style == 'calm':
-                expr = max(.25, expr - .10)
+                expr = max(.25, expr - .12)
             # Show the actual casting rather than only the inferred speaker.
             span.voice_id = voice
             units.append(Unit(chunk, span.speaker, voice, gender, delivery, pitch,
                               pace, volume, expr, gap,
-                              int(profile.get('seed', 42)), span.id))
+                              int(profile.get('seed', 42)), span.id, span.channel if span.kind == 'dialogue' else 'none'))
     return units
