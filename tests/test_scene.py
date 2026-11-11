@@ -17,6 +17,71 @@ from backend.app.brazilian import BrazilianEngine, SpeechCancelled
 
 
 class SceneSegmentationTest(unittest.TestCase):
+    def test_descriptive_dialogue_pattern_preserves_model_resolution_of_old_man(self):
+        scene_text = Path('tests/fixtures/reserved_report_scene.txt').read_text()
+        spans = segment_text(scene_text)
+        dialogue_spans = [span for span in spans if span.kind == 'dialogue']
+        expected_speakers = ['Duval', 'Duval', 'Tonner', 'Lise', 'Garrin', 'Amira', 'Amira']
+        # The unnamed reply needs the model's semantic resolution; it must not
+        # inherit Duval as a forced speaker from the preceding order.
+        self.assertEqual(dialogue_spans[2].speaker_attribution, '')
+        self.assertEqual(dialogue_spans[2].speaker_hint, '')
+        labels = SceneLabels.model_validate({
+            'cast': [{'name': speaker_name} for speaker_name in dict.fromkeys(expected_speakers)],
+            'lines': [{'id': span.id, 'speaker': speaker_name}
+                      for span, speaker_name in zip(dialogue_spans, expected_speakers)]})
+        scene = apply_labels(spans, labels)
+        self.assertEqual([span.speaker for span in scene.spans if span.kind == 'dialogue'], expected_speakers)
+        self.assertEqual(len(set(expected_speakers)), 5)
+        self.assertEqual(''.join(span.raw for span in scene.spans), scene_text)
+        self.assertTrue(all(span.speaker == NARRATOR for span in scene.spans if span.kind == 'narration'))
+
+    def test_described_reply_stays_ambiguous_without_semantic_analysis(self):
+        scene_text = 'Dario ordena: "Nara, registre tudo!" "Afirmado," a mecânica responde.'
+        scene = conservative_scene(segment_text(scene_text))
+        self.assertEqual([span.speaker for span in scene.spans if span.kind == 'dialogue'],
+                         ['Dario', 'Personagem'])
+
+    def test_core_fragment_scene_identifies_all_five_speakers_losslessly(self):
+        original_text = Path('tests/fixtures/core_fragment_scene.txt').read_text()
+        expected_speakers = ['Lise', 'Lise', 'Garrin', 'Garrin', 'Duval', 'Duval',
+                             'Vasseur', 'Amira', 'Garrin', 'Garrin', 'Lise', 'Lise', 'Duval']
+        for replacements in [{}, {'Lise': 'Nara', 'Garrin': 'Arlen', 'Duval': 'Dario',
+                                  'Vasseur': 'Bela', 'Amira': 'Maia'}]:
+            scene_text = original_text
+            for original_name, replacement_name in replacements.items():
+                scene_text = scene_text.replace(original_name, replacement_name)
+            scene = conservative_scene(segment_text(scene_text))
+            actual_speakers = [span.speaker for span in scene.spans if span.kind == 'dialogue']
+            self.assertEqual(actual_speakers, [replacements.get(name, name) for name in expected_speakers])
+            self.assertEqual(len(set(actual_speakers)), 5)
+            self.assertNotIn('Ferreis', actual_speakers)
+            self.assertNotIn('Tonner', actual_speakers)
+            self.assertEqual(''.join(span.raw for span in scene.spans), scene_text)
+
+    def test_explicit_attributions_override_wrong_model_and_incomplete_cast(self):
+        scene_text = Path('tests/fixtures/core_fragment_scene.txt').read_text()
+        spans = segment_text(scene_text)
+        # Reproduce missing speakers and a listener incorrectly labeled as speaker.
+        labels = SceneLabels.model_validate({
+            'cast': [{'name': 'Lise'}, {'name': 'Ferreis'}, {'name': 'Vasseur'}],
+            'lines': [{'id': span.id, 'speaker': 'Ferreis'}
+                      for span in spans if span.kind == 'dialogue']})
+        scene = apply_labels(spans, labels)
+        self.assertIsNone(scene.warning)
+        self.assertEqual([span.speaker for span in scene.spans if span.kind == 'dialogue'],
+                         ['Lise', 'Lise', 'Garrin', 'Garrin', 'Duval', 'Duval',
+                          'Vasseur', 'Amira', 'Garrin', 'Garrin', 'Lise', 'Lise', 'Duval'])
+        self.assertEqual(''.join(span.raw for span in scene.spans), scene_text)
+
+    def test_model_can_override_an_action_hint_without_speech_attribution(self):
+        spans = segment_text('Maia entra. "Volte aqui!"')
+        labels = SceneLabels.model_validate({
+            'cast': [{'name': 'Dario'}],
+            'lines': [{'id': spans[-1].id, 'speaker': 'Dario'}]})
+        self.assertEqual(spans[-1].speaker_hint, 'Maia')
+        self.assertEqual(apply_labels(spans, labels).spans[-1].speaker, 'Dario')
+
     def test_original_scene_is_preserved_with_offsets_and_internal_quotation(self):
         text = Path('tests/fixtures/rpg_scene.txt').read_text()
         spans = segment_text(text)

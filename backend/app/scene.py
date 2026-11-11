@@ -39,6 +39,7 @@ class Span:
     register: str = 'medium'
     delivery: str = 'neutral'
     speaker_hint: str = ''
+    speaker_attribution: str = ''
     voice_kind: str = 'human'
     voice_id: str = ''
     voice_override: str = ''
@@ -113,32 +114,54 @@ def _script_regions(begin, end, text):
 
 # Restrict deterministic hints to named subjects/actions outside quotations.
 _NAME = r"[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ-]*(?: [A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ-]*){0,2}"
-_SPEECH = r"responde|respondeu|diz|disse|pergunta|perguntou|grita|gritou|sussurra|sussurrou|retruca|retrucou|comenta|comentou|pede|pediu|dispara"
-_ACTION = _SPEECH + r"|cospe|sobe|aparece|segura|entra|sorri|olha|ergue|levanta|cruza|corre|ajusta|desce|encara|engole|recua|para|vira|aproxima"
-_SUBJECT = re.compile(r'\b(' + _NAME + r')\s+(?:' + _ACTION + r')\b')
+_SPEECH = r"responde|respondeu|diz|disse|pergunta|perguntou|grita|gritou|sussurra|sussurrou|retruca|retrucou|comenta|comentou|pede|pediu|dispara|repete|repetiu|estoura|ruge|corta|ordena|afirma|explica|avisa|murmura|berra"
+_ACTION = _SPEECH + r"|cospe|sobe|aparece|segura|entra|sorri|olha|ergue|levanta|cruza|corre|ajusta|desce|encara|engole|recua|para|vira|aproxima|dá|está|invade"
+_SUBJECT = re.compile(r'\b(' + _NAME + r')(?:\s+(?:(?:já|ainda)\s+)?(?:' + _ACTION + r')\b|,\s+que\b)')
 _POST_SPEAKER = re.compile(r'^[\s,.;:—–]*(' + _NAME + r')\s+(?:' + _SPEECH + r')\b')
+_DESCRIBED_SPEAKER = re.compile(r'^[\s,.;:—–]*(?:o|a)\s+(?:[\wÀ-ÿ-]+\s+){1,4}(?:' + _SPEECH + r')\b', re.I)
 _PRONOUNS = {'Ela', 'Ele', 'Você', 'Eu', 'Nós', 'Eles', 'Elas', 'Isso', 'Aquilo'}
 
 
 def context_hints(spans):
     actor = ''
+    explicit = False
     for index, span in enumerate(spans):
         if span.kind == 'narration':
-            if '\n\n' in span.raw:
+            if '\n\n' in span.raw or (not span.text and '\n' in span.raw):
                 actor = ''
-            subjects = [match.group(1) for match in _SUBJECT.finditer(span.text)
+                explicit = False
+            subjects = [match for match in _SUBJECT.finditer(span.text)
                         if match.group(1) not in _PRONOUNS]
             if subjects:
-                actor = subjects[-1]
+                subject = subjects[-1]
+                actor = subject.group(1)
+                explicit = bool(re.match(r'\s+(?:' + _SPEECH + r')\b', span.text[subject.end(1):]))
+                # A named actor whose voice introduces a quotation is its speaker.
+                if span.text.rstrip().endswith(':') and re.search(r'\bvoz\b', span.text[subject.end():], re.I):
+                    explicit = True
             continue
         if not span.speaker_hint:
             following = spans[index + 1].text if index + 1 < len(spans) else ''
             attribution = _POST_SPEAKER.match(following)
+            if _DESCRIBED_SPEAKER.match(following):
+                # Resolving "the old man replies" needs semantic context; the
+                # preceding speaker must not become an authoritative attribution.
+                actor = ''
+                explicit = False
             if attribution and attribution.group(1) not in _PRONOUNS:
-                actor = attribution.group(1)
+                # "Lise speaks." Garrin roars: "..." introduces the NEXT
+                # speaker. A reporting clause ending in a period labels this one.
+                clause_end = re.search(r'[.!?:]', following[attribution.end():])
+                introduces_next = clause_end and clause_end.group() == ':'
+                if not introduces_next or not actor or actor == attribution.group(1):
+                    actor = attribution.group(1)
+                    explicit = True
             span.speaker_hint = actor
+            span.speaker_attribution = actor if explicit else ''
         else:
             actor = span.speaker_hint
+            explicit = True
+            span.speaker_attribution = actor
     return spans
 
 
@@ -239,11 +262,16 @@ A cena foi separada em trechos numerados. Não escreva nem reescreva o texto: id
 Regras:
 - Trechos kind=narration são SEMPRE do Narrador, mesmo se mencionarem personagens. Não transforme descrições em falas.
 - speaker_hint é uma pista automática e pode estar errada ou desatualizada; confira a narração antes e depois de cada fala e prefira a atribuição explícita no contexto.
+- Diferencie atribuição após a fala de introdução da próxima: em '"Pare!" Lise diz. Garrin ruge: "Cuidado!"', Pare é de Lise e Cuidado é de Garrin. Vocativos como "Ferreis," não identificam quem fala.
 - Trechos kind=dialogue são falas; descubra QUEM as diz pela narração antes E depois, atribuições ("X responde", "ela diz"), pronomes e continuidade do parágrafo.
 - Uma fala antes de "X responde" é de X. Se X chama Y dentro da fala, X CONTINUA falando: o destinatário não é o falante.
 - Aspas simples como 'cinzas' dentro da fala NÃO trocam o falante.
 - Não crie vozes para pessoas apenas mencionadas. Destinatários citados não são automaticamente falantes.
 - Toda descrição intercalada ("ela diz", "ela engole seco") é do Narrador; a fala depois dela pode ser da mesma personagem.
+- Reconheça também Nome + descrição longa + dois-pontos + "fala": em 'Dario já está de pé, e a voz dele corta a noite: "Parem!" Ele se vira: "Esperem!"', ambas as falas são de Dario. A descrição pode conter gestos, aparência, emoção e referências à voz, sem usar o verbo "dizer".
+- Resolva pronomes pela continuidade: em 'Maia cruza os braços, e a voz dela sai fria: "Eu sei." Ela ergue o rosto. "Vamos."', as duas falas são de Maia. Uma pessoa citada apenas na narração DEPOIS do fechamento da última fala não recebe essa fala automaticamente.
+- Respostas com descrição no lugar do nome exigem contexto: em 'Dario ordena: "Nara, registre tudo!" "Afirmado," a mecânica responde.', a resposta é de Nara quando a cena identifica Nara como a mecânica. Não atribua a resposta a Dario por continuidade e não crie um personagem chamado "a mecânica". Se a identidade continuar ambígua, use Personagem.
+- Menções a pessoas dentro da fala (ordens para Nara e Rui, perguntas para o protagonista, referências à Diretora) não provam que elas falam. Monte primeiro a sequência de autores de todos os diálogos; depois liste em cast cada autor distinto uma única vez.
 - Preserve os nomes exatamente como aparecem no texto e em speaker_hint; não abrevie nem trunque nomes.
 - Use o primeiro nome consistente para identificar cada personagem. Narrador é reservado à narração. Se não houver evidência do falante, use Personagem; não invente nomes.
 - voice_kind em cast: human para voz humana, robot para robô ou máquina explicitamente identificada, entity para entidade não humana com voz própria. Não classifique apenas pelo nome. Gênero neutral significa explicitamente sem gênero; unknown significa falta de pistas. Robôs e entidades também podem ter voz masculina ou feminina.
@@ -286,6 +314,11 @@ def apply_labels(spans: list[Span], labels: SceneLabels) -> Scene:
     missing = False
     for index, span in enumerate(spans):
         line = indexed.get(span.id)
+        if span.kind == 'dialogue' and span.speaker_attribution:
+            attributed = identity(span.speaker_attribution)
+            cast.setdefault(attributed, CastMember(name=span.speaker_attribution))
+            line = (line.model_copy(update={'speaker': span.speaker_attribution}) if line
+                    else LineLabel(id=span.id, speaker=span.speaker_attribution))
         if span.speaker_hint and span.kind == 'dialogue' and not line:
             hinted = identity(span.speaker_hint)
             cast.setdefault(hinted, CastMember(name=span.speaker_hint))
