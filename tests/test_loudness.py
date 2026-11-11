@@ -23,7 +23,7 @@ def loudness(audio, rate=24000):
         '-f', 'null', '-'], input=np.asarray(audio, dtype='<f4').tobytes(), stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE, check=True)
     report = result.stderr.decode()
-    return json.loads(report[report.rfind('{'):])
+    return json.JSONDecoder().raw_decode(report[report.rfind('{'):])[0]
 
 
 def speech_like():
@@ -34,6 +34,21 @@ def speech_like():
 
 @unittest.skipUnless(shutil.which('ffmpeg'), 'FFmpeg necessário')
 class LoudnessTest(unittest.TestCase):
+    def test_ffmpeg_messages_after_measurement_do_not_interrupt_normalization(self):
+        run_ffmpeg = subprocess.run
+
+        def append_ffmpeg_message(*arguments, **options):
+            result = run_ffmpeg(*arguments, **options)
+            result.stderr += b'\n[out#0/null] audio:375KiB\n'
+            return result
+
+        source = speech_like() * .02
+        with patch('backend.app.loudness.subprocess.run', side_effect=append_ffmpeg_message):
+            result = normalize_voice(source, 24000)
+        self.assertEqual(len(result), len(source))
+        self.assertTrue(np.isfinite(result).all())
+        self.assertAlmostEqual(float(loudness(result)['input_i']), TARGET_LUFS, delta=.3)
+
     def test_quiet_and_loud_voices_reach_same_perceived_level_with_peak_headroom(self):
         measured = []
         for amplitude in [.008, .08, .6]:
@@ -65,8 +80,11 @@ class LoudnessTest(unittest.TestCase):
             sr = 24000
             device = 'cpu'
             conds = Conditions()
-            def __init__(self): self.calls = 0
+            def __init__(self):
+                self.calls = 0
+                self.generation_settings = []
             def generate(self, *args, **kwargs):
+                self.generation_settings.append(kwargs)
                 amplitude = [.015, .5, .07][self.calls]
                 self.calls += 1
                 return torch.from_numpy(speech_like() * amplitude).unsqueeze(0)
@@ -76,7 +94,11 @@ class LoudnessTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             for voice in ['narrator', 'actor', 'other']: Path(directory, voice + '.wav').touch()
             with patch('backend.app.brazilian.reference_path', side_effect=lambda v: Path(directory, v + '.wav')):
-                wav = BrazilianEngine()._perform(Model(), units, None, None, None, None)
+                generation_model = Model()
+                wav = BrazilianEngine()._perform(generation_model, units, None, None, None, None)
+        for generation_settings in generation_model.generation_settings:
+            self.assertEqual(generation_settings['language_id'], 'pt')
+            self.assertEqual(generation_settings['cfg_weight'], 0.0)
         samples, rate = sf.read(BytesIO(wav))
         levels = [float(loudness(samples[int(index * 3.1 * rate):int((index * 3.1 + 3) * rate)], rate)['input_i']) for index in range(3)]
         self.assertLess(max(levels) - min(levels), .3)

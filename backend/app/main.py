@@ -2,7 +2,7 @@ import json
 import logging
 from pathlib import Path
 from uuid import uuid4, UUID
-from typing import Literal
+from typing import Annotated, Literal
 
 import soundfile as sf
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
@@ -18,6 +18,7 @@ from .voices import VOICE_PROFILES
 from .brazilian import voice_catalog, reference_path, REFERENCE_DIR, MODEL_DIR
 from .jobs import queue
 from .reference_audio import MAX_UPLOAD_BYTES, normalize_reference
+from .youtube_audio import ExtractionBusy, canonical_video_url, extract_youtube_audio
 
 app = FastAPI(title='VoxArcana Studio', version='0.4.0', description='Narração local em PT-BR.')
 LOCAL_ORIGINS = ['http://127.0.0.1:8765', 'http://localhost:8765',
@@ -161,6 +162,30 @@ def delete_reference(voice_id: str):
     return {'id': voice_id, 'deleted': True}
 
 
+class YouTubeClipRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)
+    start_seconds: float = Field(default=0, ge=0, le=86400, allow_inf_nan=False)
+
+    @field_validator('url')
+    @classmethod
+    def youtube_only(cls, url):
+        return canonical_video_url(url)
+
+
+@app.post('/v1/audio/youtube')
+def youtube_clip(request: YouTubeClipRequest):
+    try:
+        wav = extract_youtube_audio(request.url, request.start_seconds)
+    except ExtractionBusy as error:
+        raise HTTPException(409, str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(503, str(error)) from error
+    except (ValueError, OSError, sf.LibsndfileError) as error:
+        raise HTTPException(422, str(error)) from error
+    return Response(content=wav, media_type='audio/wav', headers={
+        'Cache-Control': 'no-store', 'Content-Disposition': 'attachment; filename="youtube-30s.wav"'})
+
+
 @app.post('/v1/voices/reference')
 def add_reference(audio: UploadFile = File(...), name: str = Form(min_length=1, max_length=60),
                   role: Literal['narrator', 'character', 'both'] = Form('both'),
@@ -236,6 +261,7 @@ class CharacterRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     gender: Literal['male', 'female', 'neutral', 'unknown'] = 'unknown'
     voice_id: str = Field(min_length=1, max_length=80)
+    aliases: list[Annotated[str, Field(min_length=1, max_length=80)]] | None = Field(default=None, max_length=20)
 
     @field_validator('name')
     @classmethod
@@ -255,7 +281,7 @@ def characters():
 def edit_character(record_id: str, request: CharacterRequest):
     from .characters import update_character
     try:
-        return update_character(record_id, request.name, request.gender, request.voice_id, voice_catalog())
+        return update_character(record_id, request.name, request.gender, request.voice_id, voice_catalog(), aliases=request.aliases)
     except LookupError as error:
         raise HTTPException(404, str(error)) from error
     except ValueError as error:

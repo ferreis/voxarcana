@@ -99,13 +99,10 @@ class JobQueue:
                     job.review_scene = scene
                     job.review_payload = payload
                     job.scene = scene.public()
-                    needs_review = any(s.kind == 'dialogue' and s.text and not s.character_saved for s in scene.spans)
-                    if needs_review:
-                        job.status = 'review'
-                        job.stage = 'review'
-                        return
-                # All speakers already have a valid user choice: continue directly.
-                payload = {**payload, 'automatic': True, 'scene': scene}
+                    job.status = 'review'
+                    job.stage = 'review'
+                # A análise nunca inicia a síntese, mesmo com elenco salvo ou só narração.
+                return
             callbacks = {'on_scene': on_scene, 'on_unit': on_unit, 'on_stage': on_stage, 'on_analysis': on_analysis} if payload.get('automatic') else {}
             audio = get_engine().synthesize(**payload, progress=progress,
                                             cancelled=job.cancel.is_set, **callbacks)
@@ -129,8 +126,8 @@ class JobQueue:
             job = self.jobs.get(job_id)
             if job is None:
                 raise LookupError('Análise não encontrada. Analise o texto novamente.')
-            if job.status != 'review':
-                raise ValueError('Essa análise não está aguardando revisão.')
+            if job.status not in {'review', 'done'} or job.review_scene is None or job.review_payload is None:
+                raise ValueError('Essa análise não está disponível para revisar ou gerar novamente.')
             if sum(j.status in {'queued', 'running', 'cancelling'} for j in self.jobs.values()) >= 3:
                 raise ValueError('A fila está cheia. Aguarde antes de gerar.')
             voices = {v['id']: v for v in catalog}
@@ -163,6 +160,12 @@ class JobQueue:
                        'speed': speed if speed is not None else job.review_payload.get('speed', 1.0)}
             job.status = 'queued'
             job.stage = 'queued'
+            job.audio = None
+            job.error = None
+            job.completed = 0
+            job.total = 0
+            job.speaker = None
+            job.delivery = None
             job.scene = scene.public()
             self.pool.submit(self._run, job, payload)
             return job

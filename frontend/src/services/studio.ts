@@ -28,8 +28,24 @@ async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>
 }
 export const studioApi = {
+  async youtubeClip(url: string, startSeconds: number, signal?: AbortSignal) {
+    const response = await fetch('/v1/audio/youtube', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, start_seconds: startSeconds }),
+      signal: signal ?? AbortSignal.timeout(135000),
+    })
+    if (!response.ok) {
+      let message = 'Não consegui extrair o áudio do YouTube. Tente outro vídeo.'
+      try {
+        const problem = await response.json()
+        if (typeof problem.detail === 'string') message = problem.detail
+      } catch { /* Keep the extraction error when the response is not JSON. */ }
+      throw new StudioError(message, response.status)
+    }
+    return response.blob()
+  },
   characters: () => request<SavedCharacter[]>('/v1/characters'),
-  updateCharacter: (id: string, data: { name: string; gender: string; voice_id: string }) => request<SavedCharacter>(`/v1/characters/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+  updateCharacter: (id: string, character: { name: string; gender: string; voice_id: string; aliases?: string[] }) => request<SavedCharacter>(`/v1/characters/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(character) }),
   engine: () => request<Engine>('/v1/engine'),
   voices: () => request<Voice[]>('/v1/voices'),
   styles: () => request<Style[]>('/v1/styles'),

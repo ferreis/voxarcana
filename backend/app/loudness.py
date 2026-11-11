@@ -30,7 +30,8 @@ def normalize_voice(samples, sample_rate):
                                   input=data, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                                   check=True, timeout=30)
         report = measured.stderr.decode(errors='replace')
-        stats = json.loads(report[report.rfind('{'):])
+        # FFmpeg can append progress/output messages after the JSON report.
+        stats = json.JSONDecoder().raw_decode(report[report.rfind('{'):])[0]
         if not math.isfinite(float(stats['input_i'])):
             # LUFS needs an integration window; very short words may lack one.
             active = np.abs(audio) >= np.max(np.abs(audio)) * .03

@@ -71,9 +71,9 @@ class CharacterMemoryTest(unittest.TestCase):
         self.assertEqual(characters.apply_saved(self.scene(), 'carlos', self.catalog).spans[0].voice_override, 'ditador')
         self.assertEqual(characters.apply_saved(self.scene('Brigitte'), 'carlos', self.catalog).spans[0].voice_override, 'atriz')
 
-    def test_known_cast_skips_questions_but_new_character_stops_before_tts(self):
+    def test_known_and_new_characters_always_wait_for_generation_approval(self):
         self.remember()
-        for name, expected in [('Garrin', 'done'), ('Novo', 'review')]:
+        for name in ['Garrin', 'Novo']:
             queue = JobQueue()
             reader = Mock()
             reader.analyze.return_value = self.scene(name, 'female')
@@ -84,11 +84,11 @@ class CharacterMemoryTest(unittest.TestCase):
                  patch('backend.app.jobs.get_engine', return_value=engine):
                 job = queue.submit({'text': '"Oi!"', 'voice': 'carlos', 'review': True})
                 queue.pool.shutdown(wait=True)
-            self.assertEqual(job.status, expected)
-            if expected == 'done':
-                self.assertEqual(engine.synthesize.call_args.kwargs['scene'].spans[0].voice_override, 'ditador')
-            else:
-                engine.assert_not_called()
+            self.assertEqual(job.status, 'review')
+            engine.assert_not_called()
+            if name == 'Garrin':
+                self.assertEqual(job.scene['segments'][0]['voice_id'], 'ditador')
+                self.assertTrue(job.scene['segments'][0]['character_saved'])
 
     def test_character_api_lists_and_edits_saved_choice(self):
         from fastapi.testclient import TestClient
@@ -103,3 +103,41 @@ class CharacterMemoryTest(unittest.TestCase):
             self.assertEqual(client.patch('/v1/characters/garrin', json=payload).status_code, 200)
             self.assertEqual(client.get('/v1/characters').json()[0]['voice_id'], 'atriz')
             self.assertEqual(client.patch('/v1/characters/garrin', json={**payload, 'voice_id': 'carlos'}).status_code, 422)
+
+    def test_explicit_surname_and_nickname_reuse_canonical_character_and_voice(self):
+        self.remember(name='Lucas Almeida')
+        saved = characters.update_character('lucasalmeida', 'Lucas Almeida', 'male', 'ditador',
+                                            self.catalog, aliases=['Almeida', 'Corvo', ' corvo ', 'Lucas Almeida'])
+        self.assertEqual(saved['aliases'], ['Almeida', 'Corvo'])
+        for alias in ['Almeida', 'CORVO', 'Córvo']:
+            span = characters.apply_saved(self.scene(alias), 'carlos', self.catalog).spans[0]
+            self.assertEqual((span.speaker, span.voice_id), ('Lucas Almeida', 'ditador'))
+            self.assertTrue(span.character_saved)
+        # Updating an older client without an aliases field preserves them.
+        updated = characters.update_character('lucasalmeida', 'Lucas Almeida', 'male', 'ditador', self.catalog)
+        self.assertEqual(updated['aliases'], ['Almeida', 'Corvo'])
+
+    def test_alias_collisions_are_rejected_without_modifying_records(self):
+        self.remember(name='Lucas Almeida')
+        self.remember(name='Brigitte', voice='atriz', gender='female')
+        characters.update_character('brigitte', 'Brigitte', 'female', 'atriz', self.catalog, aliases=['Corvo'])
+        original = (self.path / 'characters.json').read_bytes()
+        for aliases in [['Brigitte'], ['Corvo'], ['Narrador'], ['   ']]:
+            with self.subTest(aliases=aliases), self.assertRaises(ValueError):
+                characters.update_character('lucasalmeida', 'Lucas Almeida', 'male', 'ditador', self.catalog, aliases=aliases)
+            self.assertEqual((self.path / 'characters.json').read_bytes(), original)
+
+    def test_aliases_can_be_saved_and_removed_through_api(self):
+        from fastapi.testclient import TestClient
+        from backend.app.main import app
+        self.remember()
+        payload = {'name': 'Garrin', 'gender': 'male', 'voice_id': 'ditador', 'aliases': ['Ferreiro']}
+        with patch('backend.app.main.voice_catalog', return_value=self.catalog):
+            client = TestClient(app)
+            response = client.patch('/v1/characters/garrin', json=payload)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()['aliases'], ['Ferreiro'])
+            self.assertEqual(client.patch('/v1/characters/garrin', json={**payload, 'aliases': ['a'] * 21}).status_code, 422)
+            self.assertEqual(client.patch('/v1/characters/garrin', json={**payload, 'aliases': ['a' * 81]}).status_code, 422)
+            response = client.patch('/v1/characters/garrin', json={**payload, 'aliases': []})
+            self.assertEqual(response.json()['aliases'], [])

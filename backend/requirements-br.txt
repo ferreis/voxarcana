@@ -5,6 +5,7 @@ pydantic-settings>=2.10,<3
 python-multipart>=0.0.20
 soundfile>=0.13,<1
 requests>=2.32,<3
+yt-dlp[default]
 numpy==1.26.4
 torch==2.6.0
 torchaudio==2.6.0

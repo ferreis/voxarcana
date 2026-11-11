@@ -16,6 +16,8 @@ O inicializador prepara o ambiente Python isolado em `backend/.venv-br`, instala
 
 Abra **http://127.0.0.1:8765**. Encerre com **Ctrl+C**. O servidor não deve ser exposto à internet ou à rede local.
 
+Com `VOXARCANA_DEVICE=auto` em `backend/.env`, o modelo de voz tenta usar a GPU. Se faltar memória durante o carregamento, continua na CPU, com geração mais lenta. Para tentar a GPU novamente após liberar memória, reinicie o backend. Use `VOXARCANA_DEVICE=cpu` para sempre usar a CPU; ao definir `cuda` explicitamente, a falta de memória é informada como erro.
+
 O processamento de diálogos por inteligência artificial requer o **Ollama** instalado localmente e o modelo `qwen3:4b-instruct-2507-q4_K_M`. O backend usa a porta de loopback `11435` e pode preparar o modelo na primeira análise. Instalação do Ollama: https://ollama.com/download . Sem o Ollama, a análise pode recorrer à segmentação conservadora do texto.
 
 Para reiniciar os serviços locais e o analisador Ollama usando o script de desenvolvimento, execute `./reiniciar.sh` depois de configurar o ambiente.
@@ -25,9 +27,19 @@ Para reiniciar os serviços locais e o analisador Ollama usando o script de dese
 1. Adicione uma gravação brasileira autorizada à biblioteca de vozes. O estúdio só usa referências importadas e registradas pelo usuário.
 2. Cole uma cena de até 10.000 caracteres e escolha uma voz de narrador.
 3. Clique em **Analisar texto e escolher vozes**. Confira os personagens detectados, as vozes e as falas.
-4. Gere o áudio e use o player para ouvir ou baixar o WAV.
+4. Na etapa **2 · Gerar áudio**, confirme as vozes com o botão **Gerar áudio**. Use o player para ouvir ou baixar o WAV.
+
+A análise sempre aguarda essa confirmação, inclusive em cenas com apenas narrador ou com personagens já salvos. Se alterar o texto, analise novamente antes de gerar.
+
+Depois de gerar, a revisão continua disponível. Trocar o narrador, ajustar as vozes dos personagens ou alterar o estilo e a velocidade permite clicar novamente em **Gerar áudio**, reutilizando a análise e as correções. Uma nova análise só é necessária ao mudar o texto ou se o trabalho anterior não estiver mais disponível no servidor.
 
 A biblioteca permite classificar vozes como narrador, personagem ou ambos. O elenco pode memorizar escolhas para cenas futuras. Há controle de velocidade do arquivo exportado e nivelamento de volume por trecho. O ajuste de velocidade e a normalização dependem do FFmpeg.
+
+No **Elenco salvo**, use **Apelidos e sobrenomes** para vincular outras formas de chamar um personagem ao nome principal: por exemplo, `Lucas Almeida` pode ter `Almeida, Corvo`. Depois de salvar, analise novamente o texto. Esses nomes passam a usar a mesma identidade, gênero e voz; nomes já vinculados a outro personagem são recusados. As opções de voz ocultam as escolhas de outros personagens da cena e do elenco salvo. Marque **Usar voz já utilizada** para permitir compartilhar uma voz, mantendo as restrições de gênero e de voz do narrador.
+
+A geração usa o checkpoint dedicado `ResembleAI/Chatterbox-Multilingual-pt-br`, cujo identificador de idioma é `pt`. Tanto no modo só narrador quanto no modo com personagens, `cfg_weight=0` reduz a transferência de sotaque da referência, conforme a [orientação do Chatterbox](https://github.com/resemble-ai/chatterbox#original-chatterbox-tips). Isso não garante a pronúncia regional: use referências em português brasileiro e confira o áudio gerado. Alterar o código para `language_id='pt-BR'` não seleciona um sotaque brasileiro nesse modelo.
+
+Em **Adicionar voz**, também é possível colar um link de vídeo público do YouTube e informar o início em segundos, `mm:ss` ou `hh:mm:ss`. Clique em **Extrair 30 segundos** para ouvir o trecho, baixar somente o áudio WAV ou adicioná-lo à biblioteca com um nome e classificação. Escolha uma fala limpa e autorizada, sem música ou outras vozes. A extração usa internet, `yt-dlp` e FFmpeg no backend local; não usa o analisador de texto nem o modelo de voz. Vídeos privados, transmissões ao vivo e vídeos que exigem login não são suportados. O trecho precisa ter os 30 segundos completos disponíveis. Reinicie com `./start` após atualizar para instalar a dependência. Mudanças ou bloqueios do YouTube podem exigir atualizar `yt-dlp[default]` no ambiente Python.
 
 Os trabalhos ficam temporariamente na memória do servidor. O rascunho, as preferências e o identificador do trabalho ficam no armazenamento local do navegador. O histórico de áudio não sobrevive ao reinício do backend.
 

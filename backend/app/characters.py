@@ -125,7 +125,7 @@ def remember_review(original, corrected):
         _write(records)
 
 
-def update_character(record_id, name, gender, voice_id, catalog):
+def update_character(record_id, name, gender, voice_id, catalog, aliases=None):
     voice = next((v for v in catalog if v['id'] == voice_id), None)
     if not voice or voice.get('role', 'both') not in {'character', 'both'}:
         raise ValueError('Escolha uma voz classificada como Personagem ou Ambos.')
@@ -139,10 +139,27 @@ def update_character(record_id, name, gender, voice_id, catalog):
         existing = _find(records, name)
         if existing and existing != record_id:
             raise ValueError('Já existe outro personagem com esse nome.')
-        previous = records.pop(record_id)
-        aliases = set(previous.get('aliases', []))
+        previous = records[record_id]
+        requested_aliases = previous.get('aliases', []) if aliases is None else aliases
+        normalized_aliases = {}
+        for alias in requested_aliases:
+            alias_name = alias.strip()
+            alias_key = identity(alias_name)
+            if alias_key in {'', 'narrador', 'personagem'}:
+                raise ValueError('Use apelidos ou sobrenomes válidos; Narrador é reservado à narração.')
+            if alias_key != key:
+                normalized_aliases.setdefault(alias_key, alias_name)
         if identity(previous['name']) != key:
-            aliases.add(previous['name'])
-        records[key] = {'name': name, 'gender': gender, 'voice_id': voice_id, 'aliases': sorted(aliases)}
+            normalized_aliases.setdefault(identity(previous['name']), previous['name'])
+        claimed_names = {key, *normalized_aliases}
+        for other_id, other_record in records.items():
+            if other_id == record_id:
+                continue
+            other_names = {identity(other_record['name']), *(identity(alias) for alias in other_record.get('aliases', []))}
+            if claimed_names & other_names:
+                raise ValueError('Esse nome, apelido ou sobrenome já está vinculado a outro personagem.')
+        records.pop(record_id)
+        records[key] = {'name': name, 'gender': gender, 'voice_id': voice_id,
+                        'aliases': sorted(normalized_aliases.values())}
         _write(records)
     return next(record for record in list_characters(catalog) if record['id'] == key)

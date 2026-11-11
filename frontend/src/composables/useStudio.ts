@@ -2,7 +2,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { studioApi, StudioError, type Engine, type Job, type Voice, type Style, type VoiceMetadata, type ReviewedLine } from '../services/studio'
 
 const STORAGE = 'voxarcana.studio.v1'
-interface Saved { text?: string; title?: string; voice?: string; style?: string; speed?: number; job?: string }
+interface Saved { text?: string; title?: string; voice?: string; style?: string; speed?: number; job?: string; narrationOnly?: boolean }
 function readSaved(): Saved {
   try { return JSON.parse(localStorage.getItem(STORAGE) || '{}') ?? {} } catch { return {} }
 }
@@ -22,6 +22,7 @@ export function useStudio() {
   const error = ref('')
   const notice = ref('')
   const job = ref<Job | null>(null)
+  const narrationOnly = ref(saved.narrationOnly === true)
   const audioUrl = ref('')
   const audioTitle = ref('')
   const elapsed = ref(0)
@@ -30,12 +31,15 @@ export function useStudio() {
   let unmounted = false
   const controller = new AbortController()
   const busy = computed(() => submitting.value || !!job.value && ['queued', 'running', 'cancelling'].includes(job.value.status))
+  const canPerform = computed(() => !busy.value && connected.value && !!voice.value && !narrationOnly.value
+    && !!job.value?.scene && ['review', 'done'].includes(job.value.status)
+    && job.value.source_text === text.value.trim())
   const words = computed(() => text.value.trim().split(/\s+/).filter(Boolean).length)
   const selectedVoice = computed(() => voices.value.find(item => item.id === voice.value))
   const status = computed(() => {
-    if (submitting.value && !job.value) return 'Preparando a narração…'
+    if (submitting.value && !job.value) return narrationOnly.value ? 'Preparando a narração…' : 'Preparando a análise…'
     if (job.value?.status === 'review') return 'Análise pronta. Revise os personagens e escolha suas vozes.'
-    if (job.value?.status === 'queued') return 'Sua narração está na fila…'
+    if (job.value?.status === 'queued') return narrationOnly.value || job.value.scene ? 'A geração do áudio está na fila…' : 'A análise do texto está na fila…'
     if (job.value?.status === 'cancelling') return job.value.stage === 'analyzing' ? 'Cancelando a análise da cena…' : 'Cancelando após o trecho atual…'
     if (job.value?.status === 'running' && job.value.stage === 'analyzing') return 'Entendendo a cena e identificando as vozes…'
     if (job.value?.status === 'running' && job.value.stage === 'assembling') return 'Unindo as vozes da sua cena…'
@@ -48,9 +52,9 @@ export function useStudio() {
   })
   function persist() {
     try { localStorage.setItem(STORAGE, JSON.stringify({ text: text.value, title: title.value,
-      voice: voice.value, style: style.value, speed: speed.value, job: job.value?.id })) } catch { /* Private/full storage: keep working in memory. */ }
+      voice: voice.value, style: style.value, speed: speed.value, job: job.value?.id, narrationOnly: narrationOnly.value })) } catch { /* Private/full storage: keep working in memory. */ }
   }
-  watch([text, title, voice, style, speed, () => job.value?.id], persist)
+  watch([text, title, voice, style, speed, narrationOnly, () => job.value?.id], persist)
   const clock = setInterval(() => { if (busy.value) elapsed.value = Math.round((Date.now() - startedAt) / 1000) }, 1000)
 
   async function connect() {
@@ -108,29 +112,34 @@ export function useStudio() {
       await poll(job.value.id)
     }
   }
-  async function generate() {
+  async function startGeneration(interpret: boolean) {
     if (busy.value) return
     error.value = ''
     notice.value = ''
-    if (!voice.value) { error.value = 'Adicione uma voz de narrador antes de gerar.'; return }
+    if (!voice.value) { error.value = 'Adicione uma voz de narrador antes de continuar.'; return }
     if (!text.value.trim()) { error.value = 'Cole ou escreva o texto que você quer narrar.'; return }
     submitting.value = true
+    narrationOnly.value = !interpret
+    job.value = null
     startedAt = Date.now()
     elapsed.value = 0
     try {
-      const result = await studioApi.generate({ text: text.value, voice: voice.value, style: style.value, automatic: true, review: true, speed: speed.value })
-      job.value = { id: result.id, status: 'queued', completed: 0, total: 0, error: null }
+      const result = await studioApi.generate({ text: text.value, voice: voice.value, style: style.value, automatic: interpret, review: interpret, speed: speed.value })
+      job.value = { id: result.id, status: 'queued', stage: interpret ? 'analyzing' : 'queued', completed: 0, total: 0, error: null }
       await poll(result.id)
-    } catch (problem) { error.value = problem instanceof Error ? problem.message : 'Não foi possível iniciar a geração.' }
+    } catch (problem) { error.value = problem instanceof Error ? problem.message : 'Não foi possível iniciar o processamento.' }
     finally { submitting.value = false }
   }
+  function analyze() { return startGeneration(true) }
+  function narrate() { return startGeneration(false) }
   async function perform(lines: ReviewedLine[]) {
-    if (busy.value || !job.value || job.value.status !== 'review') return
+    if (busy.value || !job.value) return
     if (job.value.source_text !== text.value.trim()) { error.value = 'O texto mudou. Analise novamente antes de gerar.'; return }
+    if (!canPerform.value) return
     submitting.value = true; error.value = ''; startedAt = Date.now(); elapsed.value = 0
     try {
       const result = await studioApi.perform(job.value.id, voice.value, style.value, lines, speed.value)
-      job.value = { ...job.value, status: 'queued', stage: 'queued' }
+      job.value = { ...job.value, status: 'queued', stage: 'queued', completed: 0, total: 0, error: null }
       await poll(result.id)
     } catch (problem) { error.value = problem instanceof Error ? problem.message : 'Não consegui iniciar o áudio.' }
     finally { submitting.value = false }
@@ -169,7 +178,7 @@ export function useStudio() {
     controller.abort()
     if (audioUrl.value) URL.revokeObjectURL(audioUrl.value)
   })
-  return { text, title, voice, style, speed, voices, styles, engine, connected, checking, busy,
-    job, error, notice, audioUrl, audioTitle, elapsed, words, selectedVoice, status,
-    generate, perform, cancel, reconnect, addReference, updateVoice, deleteVoice }
+  return { text, title, voice, style, speed, voices, styles, engine, connected, checking, busy, canPerform,
+    job, narrationOnly, error, notice, audioUrl, audioTitle, elapsed, words, selectedVoice, status,
+    analyze, narrate, perform, cancel, reconnect, addReference, updateVoice, deleteVoice }
 }

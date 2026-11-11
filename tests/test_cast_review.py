@@ -39,6 +39,32 @@ class CastReviewTest(unittest.TestCase):
         self.assertEqual(job.scene['segments'][1]['speaker'], 'Garri')
         engine.assert_not_called()
 
+    def test_narration_only_waits_until_explicit_generation(self):
+        queue = JobQueue()
+        self.addCleanup(queue.pool.shutdown, wait=True)
+        scene = Scene([Span(0, 0, 5, 'narration', 'Cena.', 'Cena.')], 'test')
+        reader = Mock()
+        reader.analyze.return_value = scene
+        job = Job('narration-only')
+        queue.jobs[job.id] = job
+        engine = Mock()
+        engine.synthesize.return_value = b'wav'
+        payload = {'text': 'Cena.', 'voice': 'narrator', 'style': 'neutral',
+                   'automatic': True, 'review': True}
+        with patch('backend.app.scene.get_reader', return_value=reader), \
+             patch('backend.app.jobs.get_engine', return_value=engine):
+            queue._run(job, payload)
+            self.assertEqual(job.status, 'review')
+            self.assertIsNone(job.audio)
+            engine.assert_not_called()
+            queue.perform_review(job.id, [], 'narrator', 'neutral',
+                                 [{'id': 'narrator', 'role': 'narrator'}])
+            queue.pool.shutdown(wait=True)
+        self.assertEqual(job.status, 'done')
+        self.assertEqual(job.audio, b'wav')
+        reader.analyze.assert_called_once()
+        engine.synthesize.assert_called_once()
+
     def test_review_uses_original_text_and_honors_corrected_name_gender_and_voice(self):
         queue = JobQueue()
         scene = self.scene()
@@ -83,16 +109,63 @@ class CastReviewTest(unittest.TestCase):
         finally:
             queue.pool.shutdown(wait=True)
 
+    def test_completed_job_regenerates_with_new_narrator_and_keeps_review_without_llm(self):
+        queue = JobQueue()
+        self.addCleanup(queue.pool.shutdown, wait=True)
+        scene = self.scene()
+        job = Job('completed', status='done', audio=b'old-wav', completed=4, total=4,
+                  speaker='Garrin', delivery='neutral', review_scene=scene,
+                  review_payload={'text': 'Cena. "Oi!"', 'voice': 'old-narrator',
+                                  'style': 'neutral', 'automatic': True, 'speed': 1.25})
+        queue.jobs[job.id] = job
+        catalog = [{'id': 'new-narrator', 'role': 'narrator'},
+                   {'id': 'actor', 'role': 'character', 'gender': 'male'}]
+        corrected_line = ReviewedLine(id=1, speaker='Garrin', gender='male', voice_id='actor')
+        engine = Mock()
+        engine.synthesize.return_value = b'new-wav'
+        with patch.object(queue.pool, 'submit') as submit, \
+             patch('backend.app.scene.get_reader') as reader, \
+             patch('backend.app.jobs.get_engine', return_value=engine):
+            queue.perform_review(job.id, [corrected_line], 'new-narrator', 'calm', catalog)
+            self.assertEqual((job.status, job.completed, job.total, job.audio), ('queued', 0, 0, None))
+            self.assertIsNone(job.speaker)
+            submitted_payload = submit.call_args.args[2]
+            queue._run(job, submitted_payload)
+        reader.assert_not_called()
+        payload = engine.synthesize.call_args.kwargs
+        self.assertEqual((payload['voice'], payload['style'], payload['speed']), ('new-narrator', 'calm', 1.25))
+        self.assertEqual(payload['text'], 'Cena. "Oi!"')
+        self.assertEqual((payload['scene'].spans[1].speaker, payload['scene'].spans[1].voice_id), ('Garrin', 'actor'))
+        self.assertEqual([span.text for span in payload['scene'].spans], [span.text for span in scene.spans])
+        self.assertEqual((job.status, job.audio), ('done', b'new-wav'))
+
+    def test_active_jobs_and_done_jobs_without_analysis_cannot_be_reapproved(self):
+        queue = JobQueue()
+        self.addCleanup(queue.pool.shutdown, wait=True)
+        for status in ['queued', 'running', 'cancelling']:
+            job = Job(status, status=status, review_scene=self.scene(), review_payload={'text': 'Cena.'})
+            queue.jobs[job.id] = job
+            with self.subTest(status=status), self.assertRaises(ValueError):
+                queue.perform_review(job.id, [], 'narrator', 'neutral', [])
+            self.assertEqual(job.status, status)
+        job = Job('narration', status='done', audio=b'original')
+        queue.jobs[job.id] = job
+        with self.assertRaises(ValueError):
+            queue.perform_review(job.id, [], 'narrator', 'neutral', [])
+        self.assertEqual(job.audio, b'original')
+
     def test_review_http_approval_accepts_only_labels_and_keeps_server_text(self):
         from fastapi.testclient import TestClient
         from backend.app.main import app
         queue = JobQueue()
+        self.addCleanup(queue.pool.shutdown, wait=True)
         job = Job('review', status='review', review_scene=self.scene(),
                   review_payload={'text': 'Texto original.', 'automatic': True, 'voice': 'narrator'})
         queue.jobs[job.id] = job
         engine = Mock()
         engine.synthesize.return_value = b'wav'
-        catalog = [{'id': 'narrator', 'role': 'both'}, {'id': 'actor', 'role': 'character'}]
+        catalog = [{'id': 'narrator', 'role': 'both'}, {'id': 'new-narrator', 'role': 'narrator'},
+                   {'id': 'actor', 'role': 'character'}]
         with patch('backend.app.main.queue', queue), patch('backend.app.main.voice_catalog', return_value=catalog), \
              patch('backend.app.jobs.get_engine', return_value=engine):
             client = TestClient(app)
@@ -101,10 +174,14 @@ class CastReviewTest(unittest.TestCase):
             self.assertEqual(client.post('/v1/jobs/review/perform', json=payload,
                                          headers={'Origin': 'https://outside.example'}).status_code, 403)
             self.assertEqual(client.post('/v1/jobs/review/perform', json=payload).status_code, 202)
-            queue.pool.shutdown(wait=True)
+            queue.pool.submit(lambda: None).result(timeout=3)
             self.assertEqual(engine.synthesize.call_args.kwargs['text'], 'Texto original.')
             self.assertEqual(engine.synthesize.call_args.kwargs['speed'], 1.25)
-            self.assertEqual(client.post('/v1/jobs/review/perform', json=payload).status_code, 422)
+            self.assertEqual(client.post('/v1/jobs/review/perform', json={**payload, 'voice': 'new-narrator'}).status_code, 202)
+            queue.pool.shutdown(wait=True)
+            self.assertEqual(engine.synthesize.call_count, 2)
+            self.assertEqual(engine.synthesize.call_args.kwargs['voice'], 'new-narrator')
+            self.assertEqual(engine.synthesize.call_args.kwargs['text'], 'Texto original.')
 
     def test_truncated_model_name_keeps_explicit_original_name_and_gender(self):
         scene = apply_labels(segment_text('"Oi!" Garrin responde.'), SceneLabels.model_validate({
