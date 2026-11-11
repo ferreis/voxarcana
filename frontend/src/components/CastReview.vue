@@ -100,8 +100,8 @@ const reviewedLines = computed<ReviewedLine[] | null>(() => {
 watch(reviewedLines, lines => emit('change', lines), { immediate: true })
 </script>
 <template>
-  <section class="cast-review" aria-labelledby="cast-review-title">
-    <h2 id="cast-review-title">Confira as vozes da cena</h2>
+  <details class="cast-review" aria-labelledby="cast-review-title" open>
+    <summary><h2 id="cast-review-title">Confira as vozes da cena</h2></summary>
     <p>Confira ou altere as vozes dos personagens. Quando terminar, clique em Gerar áudio.</p>
     <p v-if="stale" class="error-message">O texto mudou. Clique em Analisar novamente.</p>
     <p v-if="loadingCharacters" class="field-help" role="status">Conferindo as vozes do elenco salvo…</p>
@@ -125,10 +125,13 @@ watch(reviewedLines, lines => emit('change', lines), { immediate: true })
       <p v-if="unassignedLines" class="error-message" role="status">{{ unassignedLines }} {{ unassignedLines === 1 ? 'fala sem personagem. Escolha quem fala' : 'falas sem personagem. Escolha quem fala em cada trecho' }} antes de gerar o áudio.</p>
       <details v-if="dialogue.length" ref="reviewLines" class="review-lines"><summary>Conferir quem diz cada fala · {{ dialogue.length }} falas</summary><div v-for="line in dialogue" :key="line.id" class="review-line"><label :for="`line-speaker-${line.id}`">Quem fala?</label><select :id="`line-speaker-${line.id}`" v-model="speakerForLine[line.id]" :aria-invalid="!speakerForLine[line.id]"><option value="" disabled>Escolha um personagem</option><option v-for="actor in actors" :key="actor.key" :value="actor.key">{{ actor.name }}</option></select><p>{{ line.text }}</p></div></details>
     </fieldset>
-  </section>
+  </details>
 </template>
 
 <style scoped>
+.cast-review > summary { cursor: pointer; }
+.cast-review > summary h2 { display: inline; }
+.cast-review > summary:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
 .cast-additions { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--color-border); padding-top: 18px; margin-top: 8px; }
 .saved-character-picker { flex: 1; min-width: 220px; max-width: 430px; }
 .cast-additions > button { min-height: 42px; justify-content: center; }
