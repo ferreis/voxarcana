@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>VoxArcana</title>
+  <rect width="64" height="64" rx="14" fill="#0a1020" />
+  <path d="M10 17h16v4h-4l11 26 10-26h-4v-4h13v4h-4L35 54h-6L15 21h-5Z" fill="#9db5ff" />
+  <path d="m48 4 3 7 7 3-7 3-3 7-3-7-7-3 7-3Z" fill="#e8edf8" />
+</svg>
