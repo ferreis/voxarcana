@@ -45,13 +45,13 @@ function example() {
     <div class="workspace">
       <header class="topbar">
         <AudioPlayer :src="audioUrl" :title="audioTitle">
+          <template #project><ProjectSelector :projects="projects" :project-id="projectId" :disabled="busy" :create="studio.createProject" @select="studio.selectProject" /></template>
           <template #actions><button class="icon-button mobile-add-voice" aria-label="Adicionar voz de referência" :disabled="!engine?.reference_audio" @click="referenceDialog?.open()"><Mic2 :size="20" /></button></template>
         </AudioPlayer>
       </header>
       <main id="studio">
         <div v-if="error" class="error-message error-banner" role="alert"><span>{{ error }}</span><button v-if="!connected || notice" class="text-button" @click="studio.reconnect">Reconectar</button></div>
         <p v-if="notice" class="muted small" role="status">{{ notice }}</p>
-        <ProjectSelector :projects="projects" :project-id="projectId" :disabled="busy" :create="studio.createProject" @select="studio.selectProject" />
         <div class="studio-layout">
           <section class="editor-section" aria-label="Texto da narração">
             <div class="section-heading editor-actions"><button class="text-button" @click="example"><Sparkles :size="14" /> Carregar exemplo</button></div>

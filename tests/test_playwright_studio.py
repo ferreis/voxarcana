@@ -74,7 +74,7 @@ class StudioBrowserTests(unittest.TestCase):
         page.goto(self.url, wait_until="networkidle")
         return page
 
-    def mock_analysis(self, page, dialogue=False, saved_voice=False, second_character=False):
+    def mock_analysis(self, page, dialogue=False, saved_voice=False, second_character=False, scene_title=None):
         source_text = 'A noite chegou. "Olá!"' if dialogue else 'A noite chegou.'
         segments = [{"id": 0, "kind": "narration", "text": "A noite chegou.",
                      "speaker": "Narrador", "gender": "unknown", "delivery": "neutral"}]
@@ -89,6 +89,8 @@ class StudioBrowserTests(unittest.TestCase):
         job_response = {"id": "analysis-test", "status": "review", "stage": "review",
                         "completed": 0, "total": 0, "error": None, "source_text": source_text,
                         "analysis_percent": 100, "scene": {"method": "test", "warning": None, "segments": segments}}
+        if scene_title is not None:
+            job_response['scene']['title'] = scene_title
         approvals = []
 
         def approve(route):
@@ -105,6 +107,58 @@ class StudioBrowserTests(unittest.TestCase):
         page.get_by_role("button", name="Analisar texto e escolher vozes").click()
         expect(page.get_by_role("heading", name="Confira as vozes da cena")).to_be_visible()
         return approvals
+
+    def test_projeto_no_topo_adapta_e_permite_criar_em_todas_as_larguras(self):
+        page = self.open_studio()
+        try:
+            for viewport_width in [360, 390, 768, 1024, 1440, 1920]:
+                page.set_viewport_size({'width': viewport_width, 'height': 1000})
+                expect(page.locator('header #studio-project')).to_be_visible()
+                expect(page.locator('main #studio-project')).to_have_count(0)
+                expect(page.get_by_text('Sua próxima narração', exact=True)).to_have_count(0)
+                page.get_by_role('button', name='Novo projeto', exact=True).click()
+                expect(page.locator('#new-project-name')).to_be_visible()
+                expect(page.get_by_role('button', name='Criar projeto', exact=True)).to_be_visible()
+                self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'))
+                project_form = page.locator('.project-create-form').bounding_box()
+                self.assertGreaterEqual(project_form['x'], 0)
+                self.assertLessEqual(project_form['x'] + project_form['width'], viewport_width)
+                page.get_by_role('button', name='Cancelar', exact=True).click()
+                page.screenshot(path=f'/tmp/voxarcana-project-top-{viewport_width}.png', full_page=True)
+        finally:
+            page.close()
+
+    def test_titulo_da_analise_aparece_e_preserva_edicao_manual_apos_reload(self):
+        page = self.open_studio()
+        try:
+            self.mock_analysis(page, scene_title='A chegada da noite')
+            expect(page.locator('#narration-title')).to_have_value('A chegada da noite')
+            page.locator('#narration-title').fill('Título escolhido por mim')
+            page.reload(wait_until='networkidle')
+            expect(page.locator('#narration-title')).to_have_value('Título escolhido por mim')
+        finally:
+            page.close()
+
+    def test_titulo_manual_durante_analise_nao_e_substituido_pela_sugestao(self):
+        page = self.open_studio()
+        job_response = {'id': 'title-test', 'status': 'running', 'stage': 'analyzing',
+                        'completed': 0, 'total': 0, 'error': None, 'scene': None,
+                        'source_text': 'A noite chegou.'}
+        page.route('**/v1/jobs', lambda route: route.fulfill(status=202, json={'id': 'title-test'}))
+        page.route('**/v1/jobs/title-test', lambda route: route.fulfill(json=job_response))
+        try:
+            page.locator('#narration-text').fill('A noite chegou.')
+            page.get_by_role('button', name='Analisar texto e escolher vozes').click()
+            expect(page.get_by_role('button', name='Cancelar', exact=True)).to_be_enabled()
+            page.locator('#narration-title').fill('Título manual durante a análise')
+            job_response.update(status='review', stage='review', scene={
+                'title': 'Sugestão automática', 'method': 'test', 'warning': None,
+                'segments': [{'id': 0, 'kind': 'narration', 'speaker': 'Narrador',
+                              'text': 'A noite chegou.', 'gender': 'unknown', 'delivery': 'neutral'}]})
+            expect(page.get_by_role('heading', name='Confira as vozes da cena')).to_be_visible()
+            expect(page.locator('#narration-title')).to_have_value('Título manual durante a análise')
+        finally:
+            page.close()
 
     def test_narracao_so_gera_audio_apos_confirmacao(self):
         page = self.open_studio()

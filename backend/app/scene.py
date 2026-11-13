@@ -52,9 +52,10 @@ class Scene:
     spans: list[Span]
     method: str
     warning: str | None = None
+    title: str = ''
 
     def public(self):
-        return {'method': self.method, 'warning': self.warning,
+        return {'method': self.method, 'warning': self.warning, 'title': self.title,
                 'segments': [asdict(span) for span in self.spans if span.text]}
 
 
@@ -76,6 +77,8 @@ class SceneLabels(BaseModel):
     cast: list[CastMember] = Field(max_length=40)
     lines: list[LineLabel] = Field(max_length=300)
     narration_delivery: DELIVERIES = 'neutral'
+    title: str = Field(default='', max_length=80,
+                       description='Título curto da cena, em português brasileiro.')
 
 
 def identity(name: str) -> str:
@@ -279,7 +282,7 @@ Regras:
 - channel para cada fala: radio ou television somente quando o contexto indicar que a própria fala é transmitida por rádio/canal ou televisão; caso contrário none. Um aparelho no ambiente ou personagem ouvindo rádio não basta.
 - delivery: neutral, warm (afeto), playful (brincadeira/provocação), firm (ordem/autoridade), urgent (pressa/grito), soft (voz baixa/intimidade), sad (fragilidade/tristeza), tense (tensão), angry (raiva), fear (medo/ansiedade).
 - A intenção pode MUDAR entre falas do mesmo personagem. Uma explicação acelerada e um pedido com voz quebrando não têm a mesma interpretação.
-- Em lines, rotule APENAS os IDs com kind=dialogue, TODOS eles. Preserve os IDs originais, não renumere. Não acrescente IDs. Em narration_delivery, escolha a intenção geral da narração. Liste em cast apenas personagens que falam, não o Narrador.
+- Em title, sugira um título curto em português brasileiro que represente a cena, sem aspas e sem ponto final. Se não houver contexto suficiente, use string vazia. Em lines, rotule APENAS os IDs com kind=dialogue, TODOS eles. Preserve os IDs originais, não renumere. Não acrescente IDs. Em narration_delivery, escolha a intenção geral da narração. Liste em cast apenas personagens que falam, não o Narrador.
 '''
 
 
@@ -343,7 +346,8 @@ def apply_labels(spans: list[Span], labels: SceneLabels) -> Scene:
                 after = spans[index + 1].text if index + 1 < len(spans) else ''
                 span.delivery, span.register = explicit_delivery(span, before, after, span.delivery)
     return Scene(spans, 'local-model',
-                 'Algumas falas não têm autor claro; a voz será escolhida entre as referências de personagem disponíveis.' if missing else None)
+                 'Algumas falas não têm autor claro; a voz será escolhida entre as referências de personagem disponíveis.' if missing else None,
+                 title=labels.title)
 
 
 class LocalReader:

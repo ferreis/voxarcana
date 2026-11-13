@@ -3,7 +3,7 @@ export interface Voice extends Partial<VoiceMetadata> { editable?: boolean; id: 
 export interface Style { id: string; name: string }
 export interface Engine { id: string; name: string; locale: string; installed: boolean; reference_audio: boolean; voice_description: boolean }
 export interface SceneSegment { id: number; kind: string; text: string; speaker: string; gender: string; voice_id?: string; character_saved?: boolean; delivery: string; channel?: 'none' | 'radio' | 'television' }
-export interface Scene { method: string; warning: string | null; segments: SceneSegment[] }
+export interface Scene { title?: string; method: string; warning: string | null; segments: SceneSegment[] }
 export interface Job { project_id?: string; id: string; status: 'review' | 'queued' | 'running' | 'cancelling' | 'cancelled' | 'done' | 'error'; completed: number; total: number; error: string | null; source_text?: string | null; analysis_percent?: number; analysis_events?: string[]; stage?: string; scene?: Scene | null; speaker?: string | null; delivery?: string | null }
 export interface Project { id: string; name: string }
 export interface Speech { project_id?: string; text: string; voice: string; style: string; automatic?: boolean; review?: boolean; speed?: number }

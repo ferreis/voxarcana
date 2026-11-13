@@ -95,12 +95,10 @@ function seek(event: Event) {
       @error="error = 'O áudio não pôde ser aberto. Tente gerar novamente.'"
     />
     <div class="player-track">
-      <span class="track-icon"
-        ><AudioLines :size="22" aria-hidden="true"
-      /></span>
-      <div>
-        <strong>{{ src ? title : "Sua próxima narração" }}</strong
-        >
+      <span v-if="!$slots.project" class="track-icon"><AudioLines :size="22" aria-hidden="true" /></span>
+      <div class="player-track-content">
+        <slot name="project" />
+        <strong v-if="src || !$slots.project">{{ src ? title : "Sua próxima narração" }}</strong>
       </div>
     </div>
     <div class="player-center">
@@ -197,7 +195,7 @@ function seek(event: Event) {
 .player {
   padding: 12px 28px;
   display: grid;
-  grid-template-columns: minmax(130px, 1fr) minmax(220px, 2fr) auto;
+  grid-template-columns: minmax(250px, 1fr) minmax(220px, 2fr) auto;
   align-items: center;
   gap: 24px;
   min-width: 0;
@@ -209,8 +207,11 @@ function seek(event: Event) {
   gap: 12px;
   min-width: 0;
 }
-.player-track > div {
+.player-track-content {
   min-width: 0;
+  width: 100%;
+  display: grid;
+  gap: 4px;
 }
 .track-icon {
   width: 38px;
@@ -338,7 +339,7 @@ function seek(event: Event) {
 @media (min-width: 768px) and (max-width: 1100px) {
   .player {
     padding-inline: 20px;
-    grid-template-columns: minmax(100px, 1fr) minmax(190px, 1.5fr) auto;
+    grid-template-columns: minmax(220px, 1fr) minmax(190px, 1.5fr) auto;
     gap: 16px;
   }
   .player-utilities {
@@ -359,6 +360,7 @@ function seek(event: Event) {
     gap: 8px 12px;
   }
   .player-track {
+    grid-column: 1/-1;
     gap: 8px;
   }
   .track-icon,
@@ -368,10 +370,12 @@ function seek(event: Event) {
     display: none;
   }
   .player-center {
-    grid-column: 1/-1;
+    grid-column: 1;
     grid-row: 2;
   }
   .player-utilities {
+    grid-column: 2;
+    grid-row: 2;
     gap: 6px;
   }
   .volume-control {

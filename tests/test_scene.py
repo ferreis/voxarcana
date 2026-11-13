@@ -278,7 +278,7 @@ class ReaderTransportTest(unittest.TestCase):
         reader = LocalReader()
         reader.prepare = Mock()
         settings = SimpleNamespace(reader_model='local', reader_url='http://127.0.0.1:11435')
-        response = self._response('{"cast": [], "lines": [], "narration_delivery": "tense", "text": "REWRITE THIS"}')
+        response = self._response('{"cast": [], "lines": [], "narration_delivery": "tense", "title": "A porta que range", "text": "REWRITE THIS"}')
         with TemporaryDirectory() as directory, patch('backend.app.scene.ANALYSIS_DIR', Path(directory)), \
              patch('backend.app.config.get_settings', return_value=settings), \
              patch('backend.app.scene.requests.post', return_value=response) as post:
@@ -286,9 +286,19 @@ class ReaderTransportTest(unittest.TestCase):
             second = reader.analyze('A porta rangeu.')
         self.assertEqual(first.spans[0].text, 'A porta rangeu.')
         self.assertEqual(second.spans[0].delivery, 'tense')
+        self.assertEqual(first.public()['title'], 'A porta que range')
+        self.assertEqual(second.public()['title'], 'A porta que range')
         self.assertEqual(post.call_count, 1)
         self.assertEqual(reader.prepare.call_count, 1)
         self.assertEqual(post.call_args.kwargs['json']['options']['num_gpu'], 0)
+
+    def test_old_labels_and_conservative_scene_keep_an_empty_optional_title(self):
+        labels = SceneLabels.model_validate({'cast': [], 'lines': []})
+        labeled_scene = apply_labels(segment_text('A porta rangeu.'), labels)
+        conservative = conservative_scene(segment_text('A porta rangeu.'))
+
+        self.assertEqual(labeled_scene.public()['title'], '')
+        self.assertEqual(conservative.public()['title'], '')
 
     def test_progress_reports_stages_and_cache_without_model_private_content(self):
         from unittest.mock import Mock

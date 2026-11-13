@@ -203,6 +203,11 @@ export function useStudio() {
         notice.value = 'Essa análise pertence a outro projeto. Analise este texto novamente.';
         return;
       }
+      if (next.status === "review" && job.value?.status !== "review" &&
+          next.scene?.title && next.source_text === text.value.trim() &&
+          (title.value.trim() || "Narração") === generationTitle.value) {
+        title.value = next.scene.title.trim().slice(0, 80);
+      }
       // Keep the review form intact when polling only updates generation progress.
       if (job.value?.id === next.id && next.scene &&
           JSON.stringify(next.scene) === JSON.stringify(job.value.scene)) {
