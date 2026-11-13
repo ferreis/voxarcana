@@ -100,7 +100,7 @@ function seek(event: Event) {
       /></span>
       <div>
         <strong>{{ src ? title : "Sua próxima narração" }}</strong
-        ><span v-if="!src">O áudio aparecerá aqui quando estiver pronto</span>
+        >
       </div>
     </div>
     <div class="player-center">

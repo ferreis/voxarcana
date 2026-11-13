@@ -17,6 +17,7 @@ interface Saved {
   projects?: Record<string, Saved>;
   text?: string;
   title?: string;
+  generationTitle?: string;
   voice?: string;
   style?: string;
   speed?: number;
@@ -43,6 +44,7 @@ export function useStudio() {
       ? saved.title.slice(0, 80)
       : "Nova narração",
   );
+  const generationTitle = ref(saved.generationTitle || title.value.trim() || "Narração");
   const voice = ref(typeof saved.voice === "string" ? saved.voice : "");
   const style = ref(typeof saved.style === "string" ? saved.style : "neutral");
   const speed = ref(
@@ -130,6 +132,7 @@ export function useStudio() {
             [projectId.value]: {
               text: text.value,
               title: title.value,
+              generationTitle: generationTitle.value,
               voice: voice.value,
               style: style.value,
               speed: speed.value,
@@ -144,7 +147,7 @@ export function useStudio() {
     }
   }
   watch(
-    [text, title, voice, style, speed, narrationOnly, () => job.value?.id],
+    [text, title, generationTitle, voice, style, speed, narrationOnly, () => job.value?.id],
     persist,
   );
   const clock = setInterval(() => {
@@ -200,13 +203,18 @@ export function useStudio() {
         notice.value = 'Essa análise pertence a outro projeto. Analise este texto novamente.';
         return;
       }
+      // Keep the review form intact when polling only updates generation progress.
+      if (job.value?.id === next.id && next.scene &&
+          JSON.stringify(next.scene) === JSON.stringify(job.value.scene)) {
+        next.scene = job.value.scene;
+      }
       job.value = next;
       if (next.status === "done") {
         const blob = await studioApi.audio(id, controller.signal);
         if (unmounted || requestedProject !== projectId.value) return;
         if (audioUrl.value) URL.revokeObjectURL(audioUrl.value);
         audioUrl.value = URL.createObjectURL(blob);
-        audioTitle.value = title.value.trim() || "Narração";
+        audioTitle.value = generationTitle.value;
       } else if (next.status === "error") {
         error.value =
           next.error ||
@@ -218,8 +226,7 @@ export function useStudio() {
       if (unmounted || requestedProject !== projectId.value) return;
       if (problem instanceof StudioError && problem.status === 404) {
         job.value = null;
-        notice.value =
-          "A narração anterior não está mais disponível. Seu texto foi mantido para gerar novamente.";
+        notice.value = "";
         return;
       }
       error.value =
@@ -250,6 +257,7 @@ export function useStudio() {
       error.value = "Cole ou escreva o texto que você quer narrar.";
       return;
     }
+    generationTitle.value = title.value.trim() || "Narração";
     submitting.value = true;
     narrationOnly.value = !interpret;
     job.value = null;
@@ -296,6 +304,7 @@ export function useStudio() {
       return;
     }
     if (!canPerform.value) return;
+    generationTitle.value = title.value.trim() || "Narração";
     submitting.value = true;
     error.value = "";
     startedAt = Date.now();
@@ -334,6 +343,7 @@ export function useStudio() {
     projectId.value = nextProjectId;
     text.value = draft.text || '';
     title.value = draft.title || 'Nova narração';
+    generationTitle.value = draft.generationTitle || title.value.trim() || 'Narração';
     voice.value = voices.value.find(candidate => candidate.id === draft.voice && candidate.role !== 'character')?.id
       || voices.value.find(candidate => candidate.role !== 'character')?.id || '';
     style.value = draft.style || 'neutral';

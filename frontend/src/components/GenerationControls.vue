@@ -25,7 +25,7 @@ const statusLabel = computed(() => props.busy ? 'Em andamento' : props.done ? '�
 const guidance = computed(() => props.busy ? `${props.elapsedLabel} decorridos`
   : props.reviewing ? 'Confira o elenco abaixo e clique em Gerar áudio.'
     : props.done ? 'Ouça no player do topo. Você pode trocar o narrador ou corrigir as vozes e gerar novamente.'
-      : 'Use só o narrador ou analise o texto para definir as vozes dos personagens.')
+      : '')
 </script>
 
 <template>
@@ -34,7 +34,7 @@ const guidance = computed(() => props.busy ? `${props.elapsedLabel} decorridos`
       <div class="generation-feedback" role="status" aria-live="polite">
         <span class="generation-label"><span :class="{ working: busy, complete: done }"></span>{{ statusLabel }}</span>
         <strong>{{ status }}</strong>
-        <p>{{ guidance }}</p>
+        <p v-if="guidance">{{ guidance }}</p>
       </div>
       <button v-if="busy" class="secondary-button cancel-generation" :disabled="cancelling || !canCancel" @click="$emit('cancel')"><Square :size="14" /> Cancelar</button>
     </div>

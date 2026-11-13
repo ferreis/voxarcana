@@ -218,6 +218,90 @@ class StudioBrowserTests(unittest.TestCase):
         finally:
             page.close()
 
+    def test_editar_durante_geracao_preserva_audio_e_rascunho_apos_reload(self):
+        page = self.open_studio(voices=[
+            {"id": "narrator-1", "name": "Narrador original", "role": "narrator"},
+            {"id": "narrator-2", "name": "Outro narrador", "role": "narrator"},
+        ])
+        requests = []
+        job_response = {"id": "editable-job", "status": "running", "stage": "synthesizing",
+                        "completed": 0, "total": 2, "error": None, "scene": None}
+
+        def start_narration(route):
+            requests.append(route.request.post_data_json)
+            route.fulfill(status=202, content_type="application/json", body='{"id":"editable-job"}')
+
+        page.route("**/v1/jobs", start_narration)
+        page.route("**/v1/jobs/editable-job", lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(job_response)))
+        audio_buffer = BytesIO()
+        with wave.open(audio_buffer, 'wb') as audio_file:
+            audio_file.setnchannels(1)
+            audio_file.setsampwidth(2)
+            audio_file.setframerate(24000)
+            audio_file.writeframes(bytes(48000))
+        page.route("**/v1/jobs/editable-job/audio", lambda route: route.fulfill(
+            status=200, content_type="audio/wav", body=audio_buffer.getvalue()))
+        try:
+            page.locator('#narration-title').fill('Cena original')
+            page.locator('#narration-text').fill('Texto original.')
+            page.get_by_role('button', name='Gerar só com narrador', exact=True).click()
+            expect(page.get_by_role('button', name='Gerando áudio…', exact=True)).to_be_visible()
+            expect(page.get_by_role('button', name='Carregar exemplo')).to_be_enabled()
+            page.locator('#narration-title').fill('Próxima cena')
+            page.locator('#narration-text').fill('Texto para depois.')
+            page.locator('#voice').select_option('narrator-2')
+            page.locator('#generation-speed').select_option('1.25')
+            page.locator('#acting').select_option('calm')
+            expect(page.get_by_role('button', name='Gerando áudio…', exact=True)).to_be_disabled()
+            expect(page.get_by_role('button', name='Cancelar', exact=True)).to_be_enabled()
+            self.assertEqual(requests[0]['text'], 'Texto original.')
+            self.assertEqual(requests[0]['voice'], 'narrator-1')
+            self.assertEqual(requests[0]['speed'], 1)
+            self.assertEqual(requests[0]['style'], 'neutral')
+            page.reload(wait_until='networkidle')
+            expect(page.locator('#narration-title')).to_have_value('Próxima cena')
+            expect(page.locator('#narration-text')).to_have_value('Texto para depois.')
+            expect(page.locator('#voice')).to_have_value('narrator-2')
+            expect(page.locator('#generation-speed')).to_have_value('1.25')
+            job_response.update(status='done', completed=2)
+            expect(page.locator('.player-track strong')).to_have_text('Cena original')
+            expect(page.get_by_role('button', name='Gerar só com narrador', exact=True)).to_be_enabled()
+            self.assertEqual(len(requests), 1)
+        finally:
+            page.close()
+
+    def test_edicao_do_elenco_durante_geracao_sobrevive_a_atualizacoes_de_progresso(self):
+        page = self.open_studio(voices=[
+            {'id': 'narrator-1', 'name': 'Narrador', 'role': 'narrator'},
+            {'id': 'actor-1', 'name': 'Atriz', 'role': 'character', 'gender': 'female'},
+        ])
+        try:
+            approvals = self.mock_analysis(page, dialogue=True, saved_voice=True)
+            running_job = {'id': 'analysis-test', 'status': 'running', 'stage': 'synthesizing',
+                           'completed': 0, 'total': 2, 'error': None,
+                           'source_text': page.locator('#narration-text').input_value(),
+                           'scene': {'method': 'test', 'warning': None, 'segments': [
+                               {'id': 0, 'kind': 'narration', 'text': 'A noite chegou.',
+                                'speaker': 'Narrador', 'gender': 'unknown', 'delivery': 'neutral'},
+                               {'id': 1, 'kind': 'dialogue', 'text': 'Olá!', 'speaker': 'Lia',
+                                'gender': 'female', 'delivery': 'neutral', 'voice_id': 'actor-1',
+                                'character_saved': True},
+                           ]}}
+            page.route('**/v1/jobs/analysis-test', lambda route: route.fulfill(
+                status=200, content_type='application/json', body=json.dumps(running_job)))
+            page.get_by_role('button', name='Gerar áudio', exact=True).click()
+            expect(page.get_by_role('button', name='Cancelar', exact=True)).to_be_enabled()
+            page.locator('#actor-name-0').fill('Nome para próxima geração')
+            for progress_update in range(2):
+                page.wait_for_event('response', predicate=lambda response:
+                                    response.url.endswith('/v1/jobs/analysis-test'))
+                expect(page.locator('#actor-name-0')).to_have_value('Nome para próxima geração')
+            self.assertEqual(len(approvals), 1)
+            self.assertEqual(approvals[0]['lines'][0]['speaker'], 'Lia')
+        finally:
+            page.close()
+
     def test_personagem_exige_voz_e_texto_alterado_exige_nova_analise(self):
         page = self.open_studio(voices=[
             {"id": "narrator-1", "name": "Narrador", "role": "narrator", "gender": "neutral"},

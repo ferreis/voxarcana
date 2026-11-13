@@ -23,7 +23,6 @@ async function saveProject(create: (name: string) => Promise<void>) {
   <section class="project-selector" aria-label="Projeto atual">
     <div class="project-picker"><label for="studio-project">Projeto</label><select id="studio-project" :value="projectId" :disabled="disabled || saving || !projects.length" @change="$emit('select', ($event.target as HTMLSelectElement).value)"><option v-for="project in projects" :key="project.id" :value="project.id">{{ project.name }}</option></select></div>
     <button class="secondary-button" :disabled="disabled || saving || !projects.length" @click="creating = !creating">{{ creating ? 'Cancelar' : 'Novo projeto' }}</button>
-    <p class="field-help">Personagens e escolhas de voz ficam salvos por projeto. A biblioteca de vozes pode ser reutilizada.</p>
     <form v-if="creating" @submit.prevent="saveProject(create)"><label class="sr-only" for="new-project-name">Nome do projeto</label><input id="new-project-name" v-model="projectName" maxlength="80" placeholder="Nome do projeto" required :disabled="disabled || saving"><button class="primary-button" :disabled="disabled || saving || !projectName.trim()">{{ saving ? 'Salvando…' : 'Criar projeto' }}</button></form>
     <p v-if="error" class="error-message" role="alert">{{ error }}</p>
   </section>
